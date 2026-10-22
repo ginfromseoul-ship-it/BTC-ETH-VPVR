@@ -19,6 +19,7 @@ UTC = timezone.utc
 SYMBOLS = ("BTCUSDT", "ETHUSDT")
 SPOT = "https://data-api.binance.vision"
 FUTURES = "https://fapi.binance.com"
+BYBIT = "https://api.bybit.com"
 OUT = Path("data/market_flow_latest.json")
 HIST = Path("data/market_flow_history.json")
 BAR_MS = 5 * 60 * 1000
@@ -158,6 +159,76 @@ def summarize_oi(current, history):
     return out
 
 
+
+
+def get_bybit(path, params):
+    """Read one Bybit public endpoint. No credentials; preserve venue provenance."""
+    response = get_json(BYBIT, path, params)
+    if not isinstance(response, dict) or response.get("retCode") != 0:
+        raise RuntimeError(f"Bybit {path} returned error {str(response.get('retCode', 'unknown'))[:30]}")
+    result = response.get("result")
+    if not isinstance(result, dict):
+        raise ValueError(f"Bybit {path} has no result object")
+    return result
+
+
+def bybit_linear_data(sym, now_ms):
+    """Independent Bybit USDT linear perpetual reference. Not Binance futures CVD."""
+    ans={"venue":"Bybit", "instrument":sym, "product":"USDT linear perpetual", "quality":{},
+         "limitations":["Not Binance futures. Never combine venue-specific OI or book depth.",
+           "Recent public trades are a limited sample, not complete 1h/4h/24h derivatives CVD."]}
+    try:
+        x=get_bybit("/v5/market/tickers", {"category":"linear", "symbol":sym})["list"]
+        if len(x)!=1 or x[0].get("symbol")!=sym:
+            raise ValueError("ticker symbol mismatch")
+        t=x[0]
+        now_oi=float(t["openInterest"])
+        ans["ticker"]={"observed_utc":iso_ms(now_ms), "last_price_usdt":float(t["lastPrice"]),
+            "mark_price_usdt":float(t["markPrice"]), "index_price_usdt":float(t["indexPrice"]),
+            "open_interest_coin_units":now_oi,
+            "open_interest_notional_usdt":float(t.get("openInterestValue") or 0) or None,
+            "funding_rate":float(t["fundingRate"]),
+            "next_funding_utc":iso_ms(int(t["nextFundingTime"])),
+            "basis_mark_vs_index_bps":round((float(t["markPrice"])/float(t["indexPrice"])-1)*10000,4)}
+        ans["quality"]["ticker"]="ok"
+    except Exception as e:
+        ans["ticker"]={"status":"unavailable", "reason":str(e)}
+        ans["quality"]["ticker"]="unavailable"
+    try:
+        raw=get_bybit("/v5/market/open-interest",{"category":"linear", "symbol":sym,"intervalTime":"1h","limit":32})["list"]
+        hist=sorted([(int(x["timestamp"]),float(x["openInterest"])) for x in raw],key=lambda z:z[0])
+        if len(hist)<2 or now_ms-hist[-1][0] > 2*3600*1000:
+            raise ValueError("insufficient or stale OI history")
+        out={"last_history_utc":iso_ms(hist[-1][0]),"last_history_coin_units":hist[-1][1], "changes":{}}
+        for hours in (1,4,24):
+            goal=hist[-1][0]-hours*3600*1000
+            opts=[x for x in hist if abs(x[0]-goal)<=35*60*1000]
+            if not opts:
+                out["changes"][f"{hours}h"]={"status":"unavailable"}
+                continue
+            before=min(opts,key=lambda x:abs(x[0]-goal))
+            current=hist[-1][1]
+            out["changes"][f"{hours}h"]={"status":"ok", "coin_units_change":round(current-before[1],6),
+                "coin_units_pct_change":round((current/before[1]-1)*100,4) if before[1] else None,
+                "start_utc":iso_ms(before[0]),"end_utc":iso_ms(hist[-1][0])}
+        ans["open_interest_history"]=out
+        ans["quality"]["open_interest_history"]="ok"
+    except Exception as e:
+        ans["open_interest_history"]={"status":"unavailable", "reason":str(e)}
+        ans["quality"]["open_interest_history"]="unavailable"
+    try:
+        raw=get_bybit("/v5/market/orderbook",{"category":"linear", "symbol":sym,"limit":1000})
+        b={"bids":raw["b"],"asks":raw["a"], "T":int(raw.get("cts") or raw["ts"])}
+        ans["depth"]=summarize_depth(b,now_ms)
+        ans["quality"]["depth"]="ok"
+    except Exception as e:
+        ans["depth"]={"status":"unavailable", "reason":str(e)}
+        ans["quality"]["depth"]="unavailable"
+    # Do not call 1000 recent trades complete flow: no guaranteed time coverage.
+    ans["cvd_1h_4h_24h"]={"status":"unavailable", "reason":"Bybit 5m kline lacks taker buy/sell data; complete historical trade tape not collected"}
+    return ans
+
+
 def collect_symbol(sym, now_ms):
     report={"symbol":sym,"spot":{},"futures":{},"quality":{},"limitations":[
       "Kline taker-buy vs remainder is a 5m aggregated trade-direction proxy; no trade-level reconstruction.",
@@ -194,6 +265,9 @@ def collect_symbol(sym, now_ms):
     except Exception as exc:
         report["futures"]["funding"]={"status":"unavailable","reason":str(exc)}
         report["quality"]["futures_funding"]="unavailable"
+    report["bybit_linear"] = bybit_linear_data(sym,now_ms)
+    for key,value in report["bybit_linear"]["quality"].items():
+        report["quality"]["bybit_linear_"+key]=value
     return report
 
 
@@ -211,23 +285,32 @@ def history_entry(full):
                 "cvd_delta_quote_usdt_24h":f.get("windows",{}).get("24h",{}).get("cvd_delta_quote_usdt")}
         oi=d["futures"].get("open_interest",{})
         compact["assets"][sym]["futures"]["oi_contract_units"]=oi.get("current_contract_units")
+        by=d.get("bybit_linear",{})
+        bd=by.get("depth",{})
+        bt=by.get("ticker",{})
+        compact["assets"][sym]["bybit_linear"]={"mid_usdt":bd.get("mid_usdt"),
+             "depth_bands":bd.get("depth_bands"),"oi_coin_units":bt.get("open_interest_coin_units"),
+             "funding_rate":bt.get("funding_rate"),
+             "open_interest_changes":by.get("open_interest_history",{}).get("changes")}
+
     return compact
 
 
 def main():
     now_ms=int(time.time()*1000)
     full={"collected_utc":iso_ms(now_ms),"source":"Binance public spot market-data and USD-M futures REST endpoints",
-        "market_scope":"Binance BTCUSDT ETHUSDT spot and USDT-margined perpetual futures (separate)",
+        "market_scope":"Binance BTCUSDT ETHUSDT spot plus Binance USD-M futures where allowed; Bybit linear perp separately labeled",
         "cadence":"approx 15min GitHub Actions scheduler; not real-time or continuous surveillance",
         "assets":{},"quality_status":"unverified"}
     for sym in SYMBOLS:
         full["assets"][sym]=collect_symbol(sym,now_ms)
     core=[full["assets"][sym]["quality"].get(f"{market}_flow") == "ok" for sym in SYMBOLS for market in ("spot","futures")]
-    full["quality_status"]="complete_core" if all(core) else ("partial_core" if any(core) else "no_core_data")
+    full["quality_status"]="complete_binance_spot_and_futures" if all(core) else ("spot_only_with_bybit_reference" if all(core[0::2]) and any(full["assets"][s]["quality"].get("bybit_linear_ticker")=="ok" for s in SYMBOLS) else ("partial_core" if any(core) else "no_core_data"))
     full["limitations"]=["No exact order-flow absorption conclusion can be drawn from intermittent depth snapshots.",
       "No public complete retrospective liquidation tape provided by this script; no invented liquidation totals.",
       "Order book USD-depth reports only when the requested range fits within returned 1000 levels.",
-      "OI open contracts vs OI notional must be interpreted separately."]
+      "OI open contracts vs OI notional must be interpreted separately.",
+      "Binance futures returned HTTP 451 on initial GitHub runner test; Bybit linear fallback is separately labeled when available."]
     OUT.parent.mkdir(parents=True,exist_ok=True)
     OUT.write_text(json.dumps(full,indent=2,ensure_ascii=False,allow_nan=False),encoding="utf-8")
     prior=[]
