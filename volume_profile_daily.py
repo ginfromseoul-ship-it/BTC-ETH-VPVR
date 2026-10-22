@@ -119,9 +119,37 @@ def compute_profile(d,width):
                                   else 'inside value area')}
 
 
+def choose_latest_available_end(requested_end, max_lag_days=4):
+    """Use the newest shared BTC/ETH *published* full UTC day.
+
+    Daily ZIPs are not published instantly after 00:00 UTC. A missing latest
+    archive (HTTP 404) is a publication lag, not proof of a broken network.
+    Never silently use data older than max_lag_days.
+    """
+    for lag in range(max_lag_days + 1):
+        candidate_end = requested_end - timedelta(days=lag)
+        last_day = candidate_end - timedelta(days=1)
+        missing_symbols = []
+        for symbol in SYMBOLS:
+            basename = f'{symbol}-5m-{last_day:%Y-%m-%d}.zip'
+            url = f'{BASE}/daily/klines/{symbol}/5m/{basename}'
+            if download(url) is None:
+                missing_symbols.append(symbol)
+        if not missing_symbols:
+            print(f'Using complete UTC data through {last_day:%Y-%m-%d}; archive publication lag: {lag} day(s)')
+            return candidate_end, lag
+        print(f'Archive not yet published for {last_day:%Y-%m-%d}: {", ".join(missing_symbols)}; trying previous day')
+    raise RuntimeError(f'No complete BTC and ETH daily archive pair found within {max_lag_days} days; refuse stale results')
+
+
 def run(end=None):
-    end=end or datetime.now(timezone.utc).replace(hour=0,minute=0,second=0,microsecond=0)
+    user_supplied_end = end is not None
+    end = end or datetime.now(timezone.utc).replace(hour=0,minute=0,second=0,microsecond=0)
     if end.tzinfo is None:end=end.replace(tzinfo=timezone.utc)
+    requested_end = end
+    publication_lag = 0
+    if not user_supplied_end:
+        end, publication_lag = choose_latest_available_end(end)
     start=end-PERIODS['52w']
     anchor=os.environ.get('ANCHOR_UTC','').strip()
     windows=dict(PERIODS)
@@ -132,6 +160,8 @@ def run(end=None):
         windows['anchored']=end-ad
     result={'generated_utc':datetime.now(timezone.utc).isoformat(),
             'data_end_utc_exclusive':end.isoformat(),
+            'requested_end_utc_exclusive':requested_end.isoformat(),
+            'archive_publication_lag_days':publication_lag,
             'source':'Binance USD-M perpetual BTCUSDT ETHUSDT official 5m kline archives',
             'method':'Uniform distribution of each 5-minute bar volume across high-low bins; approximation, NOT TradingView VPVR or actual tick profile',
             'profiles':{}}
