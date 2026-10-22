@@ -27,7 +27,17 @@ WINDOWS = {"1h": 3600, "4h": 4 * 3600, "24h": 24 * 3600}
 
 
 def iso(ts):
-    return datetime.fromtimestamp(int(ts), UTC).isoformat().replace("+00:00", "Z")
+    """Convert Coinalyze timestamps (seconds or milliseconds) to UTC safely."""
+    value = float(ts)
+    # Coinalyze currently sends history timestamps in seconds, but some
+    # current-data `update` fields are in milliseconds.
+    if abs(value) >= 1e17:  # nanoseconds
+        value /= 1_000_000_000
+    elif abs(value) >= 1e14:  # microseconds
+        value /= 1_000_000
+    elif abs(value) >= 1e11:  # milliseconds
+        value /= 1_000
+    return datetime.fromtimestamp(value, UTC).isoformat().replace("+00:00", "Z")
 
 
 def finite_float(x):
@@ -175,27 +185,32 @@ def summarize_oi(coin_rows, usd_rows, current_coin, current_usd, now):
 
 def sum_liquidations(rows, now):
     out={"status":"unavailable", "unit":"USD", "windows":{},
-         "source":"Coinalyze reported aggregated liquidations (not estimated heatmap)"}
-    if not rows:
-        out["reason"]="no returned liquidation rows; not assumed zero"
+         "source":"Coinalyze reported aggregated liquidations (not estimated heatmap)",
+         "method":"Only complete 15-minute UTC bars; missing intervals are not assumed zero"}
+    # t is the start of a 15-minute interval; never include an incomplete bar.
+    complete=[r for r in rows if isinstance(r.get("t"), int)
+              and r["t"] + 15*SEC <= now-SEC]
+    if not complete:
+        out["reason"]="no complete liquidation bars; zero not assumed"
         return out
-    newest=rows[-1]["t"]
-    if now-newest > 35*SEC:
-        out["reason"]="liquidation history stale"
+    newest=complete[-1]["t"]
+    latest_end=newest+15*SEC
+    if now-latest_end > 40*SEC:
+        out["reason"]="last complete liquidation data too old"
         return out
     out["status"]="ok"
-    out["last_data_utc"]=iso(newest)
+    out["last_complete_data_utc"]=iso(latest_end)
     for window, seconds in WINDOWS.items():
-        # 15m bars; align to last common bar. Require full coverage before totals.
-        n = seconds//(15*SEC)
-        subset=rows[-n:]
-        continuous=(len(subset)==n and all(b["t"]-a["t"]==15*SEC for a,b in zip(subset, subset[1:])))
+        n=seconds//(15*SEC)
+        subset=complete[-n:]
+        continuous=(len(subset)==n and
+                    all(b["t"]-a["t"]==15*SEC for a,b in zip(subset,subset[1:])))
         if not continuous:
-            out["windows"][window]={"status":"unavailable", "reason":"missing 15-minute data; zero not assumed"}
+            out["windows"][window]={"status":"unavailable", "reason":"missing complete 15-minute intervals; zero not assumed"}
             continue
         longs=[finite_float(r.get("l")) for r in subset]
         shorts=[finite_float(r.get("s")) for r in subset]
-        if any(x is None or x < 0 for x in longs + shorts):
+        if any(x is None or x < 0 for x in longs+shorts):
             out["windows"][window]={"status":"unavailable", "reason":"invalid liquidation values"}
             continue
         out["windows"][window]={"status":"ok", "start_utc":iso(subset[0]["t"]),
