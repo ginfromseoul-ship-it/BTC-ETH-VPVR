@@ -1,1 +1,41 @@
 
+
+name: Daily Binance BTC ETH VPVR
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 22 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  calculate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install requirements
+        run: pip install -r requirements.txt
+
+      - name: Calculate BTC and ETH VPVR
+        run: python volume_profile_daily.py
+
+      - name: Save calculated results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/volume_profile_summary.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update BTC ETH volume profiles"
+            git push
+          fi
