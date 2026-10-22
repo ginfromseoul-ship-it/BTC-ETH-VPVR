@@ -183,41 +183,72 @@ def summarize_oi(coin_rows, usd_rows, current_coin, current_usd, now):
     return out
 
 
-def sum_liquidations(rows, now):
+# Duration of each official Coinalyze liquidation aggregation bin, seconds.
+LIQ_INTERVALS = {"15min": 900, "1hour": 3600, "4hour": 14400, "6hour": 21600}
+LIQ_PREFERENCES = {
+    "1h": ("15min", "1hour"),
+    "4h": ("15min", "1hour", "4hour"),
+    "24h": ("15min", "1hour", "4hour", "6hour"),
+}
+
+
+def summarize_liquidations_multi(series_by_interval, now):
+    """Calculate exact time-bucket totals from *complete, continuous* vendor bars.
+
+    Coinalyze sometimes returns sparse 15min bars. Missing bars are *not*
+    assumed zero. Request longer vendor-native aggregations instead. If a
+    continuous set does not exist at any granularity, report unavailable.
+    Distinct windows may end at distinct UTC bucket boundaries; preserve them.
+    """
     out={"status":"unavailable", "unit":"USD", "windows":{},
-         "source":"Coinalyze reported aggregated liquidations (not estimated heatmap)",
-         "method":"Only complete 15-minute UTC bars; missing intervals are not assumed zero"}
-    # t is the start of a 15-minute interval; never include an incomplete bar.
-    complete=[r for r in rows if isinstance(r.get("t"), int)
-              and r["t"] + 15*SEC <= now-SEC]
-    if not complete:
-        out["reason"]="no complete liquidation bars; zero not assumed"
-        return out
-    newest=complete[-1]["t"]
-    latest_end=newest+15*SEC
-    if now-latest_end > 40*SEC:
-        out["reason"]="last complete liquidation data too old"
-        return out
-    out["status"]="ok"
-    out["last_complete_data_utc"]=iso(latest_end)
-    for window, seconds in WINDOWS.items():
-        n=seconds//(15*SEC)
-        subset=complete[-n:]
-        continuous=(len(subset)==n and
-                    all(b["t"]-a["t"]==15*SEC for a,b in zip(subset,subset[1:])))
-        if not continuous:
-            out["windows"][window]={"status":"unavailable", "reason":"missing complete 15-minute intervals; zero not assumed"}
-            continue
-        longs=[finite_float(r.get("l")) for r in subset]
-        shorts=[finite_float(r.get("s")) for r in subset]
-        if any(x is None or x < 0 for x in longs+shorts):
-            out["windows"][window]={"status":"unavailable", "reason":"invalid liquidation values"}
-            continue
-        out["windows"][window]={"status":"ok", "start_utc":iso(subset[0]["t"]),
-            "end_utc":iso(subset[-1]["t"]+15*SEC),
-            "long_liquidations_usd":round_or_none(sum(longs),2),
-            "short_liquidations_usd":round_or_none(sum(shorts),2),
-            "total_liquidations_usd":round_or_none(sum(longs)+sum(shorts),2)}
+         "source":"Coinalyze reported Binance long/short liquidation aggregates",
+         "method":"Vendor-native 15min/1hour/4hour/6hour closed UTC bins; no zero filling",
+         "limitations":"Time windows are bucket-aligned, not necessarily rolling to request time. Vendor figures may omit some liquidations."}
+    for window, window_s in WINDOWS.items():
+        best=None
+        diagnostics=[]
+        for interval in LIQ_PREFERENCES[window]:
+            width=LIQ_INTERVALS[interval]
+            if window_s % width: continue
+            needed=window_s//width
+            original=series_by_interval.get(interval, [])
+            completed=[x for x in original if isinstance(x, dict) and isinstance(x.get("t"),int)
+                       and x["t"]+width <= now - 60]
+            if len(completed)<needed:
+                diagnostics.append(f"{interval}: insufficient completed bars")
+                continue
+            group=completed[-needed:]
+            if any(b["t"]-a["t"] != width for a,b in zip(group,group[1:])):
+                diagnostics.append(f"{interval}: missing bins")
+                continue
+            values=[(finite_float(x.get("l")),finite_float(x.get("s"))) for x in group]
+            if any(l is None or s is None or l<0 or s<0 for l,s in values):
+                diagnostics.append(f"{interval}: invalid liquidation figure")
+                continue
+            end=group[-1]["t"]+width
+            lag=now-end
+            # A daily-style, coarse source may be several hours behind today.
+            # Do not mistake this for a rolling latest-24h measure.
+            if lag > max(40*60, width):
+                diagnostics.append(f"{interval}: latest complete bin too old")
+                continue
+            longs=sum(v[0] for v in values)
+            shorts=sum(v[1] for v in values)
+            best={"status":"ok", "start_utc":iso(group[0]["t"]),
+                  "end_utc":iso(end),"source_interval":interval,
+                  "age_seconds_at_collection":lag,
+                  "is_bucket_aligned":True,
+                  "long_liquidations_usd":round_or_none(longs,2),
+                  "short_liquidations_usd":round_or_none(shorts,2),
+                  "total_liquidations_usd":round_or_none(longs+shorts,2)}
+            break
+        out["windows"][window]=best or {"status":"unavailable",
+            "reason":"No complete contiguous vendor liquidation bins, without zero imputation",
+            "checks":diagnostics}
+    good=[v for v in out["windows"].values() if v["status"]=="ok"]
+    if good:
+        out["status"]="ok" if len(good)==len(WINDOWS) else "partial"
+        out["last_complete_data_utc"]=max(v["end_utc"] for v in good)
     return out
 
 
@@ -276,7 +307,7 @@ def main():
     output={"generated_utc":iso(now), "source":"Coinalyze public market data API",
         "docs":"https://api.coinalyze.net/v1/doc/", "note":"Venue-specific Binance USDT perpetuals. No cross-exchange aggregation.",
         "assets":{}, "quality_status":"unverified", "limitations":[
-            "Coinalyze liquidation bars are reported aggregates, not a future liquidation heatmap.",
+            "Coinalyze liquidation bars are reported aggregates, not a future liquidation heatmap. Coarse bins may be hours behind; inspect their end timestamps.",
             "OI changes do not identify which side initiated new positions.",
             "5m buy-sell volume is aggregate futures order flow, not trade-by-trade CVD.",
             "No order-book depth or exact absorption from Coinalyze API."]}
@@ -304,7 +335,10 @@ def main():
       "current_funding":("funding-rate",{"symbols":symbol_param}),
       "oi_history_native":("open-interest-history",history_params),
       "oi_history_usd":("open-interest-history",{**history_params,"convert_to_usd":"true"}),
-      "liquidation_history_usd":("liquidation-history",{**history_params,"convert_to_usd":"true"}),
+      **{f"liquidation_{interval}":("liquidation-history",
+             {"symbols":symbol_param, "interval":interval,
+              "from":now-42*3600, "to":now, "convert_to_usd":"true"})
+         for interval in LIQ_INTERVALS},
       "five_min_ohlcv":("ohlcv-history",{"symbols":symbol_param,"interval":"5min","from":start,"to":now})
     }
     results={}; errors={}
@@ -329,8 +363,9 @@ def main():
         except Exception as exc:
             item["open_interest"]={"status":"unavailable","reason":str(exc)}
         try:
-            liq=rows_for(results["liquidation_history_usd"],sym)
-            item["liquidations"]=sum_liquidations(liq,now)
+            liquidations={interval:rows_for(results[f"liquidation_{interval}"],sym)
+                          for interval in LIQ_INTERVALS}
+            item["liquidations"]=summarize_liquidations_multi(liquidations,now)
         except Exception as exc:
             item["liquidations"]={"status":"unavailable","reason":str(exc)}
         try:
@@ -346,7 +381,15 @@ def main():
         output["assets"][asset]=item
     successful=sum(v=="ok" for a in output["assets"].values() for v in a.get("quality",{}).values())
     output["quality_status"]="partial" if successful else "no_usable_data"
-    if successful==len(syms)*4: output["quality_status"]="complete"
+    all_windows_ok=all(
+        data.get("liquidations",{}).get("windows",{}).get(win,{}).get("status")=="ok"
+        and data.get("open_interest",{}).get("changes",{}).get(win,{}).get("status")=="ok"
+        and data.get("futures_flow",{}).get("windows",{}).get(win,{}).get("status")=="ok"
+        for data in output["assets"].values() for win in WINDOWS)
+    if successful==len(syms)*4 and all_windows_ok:
+        output["quality_status"]="complete"
+    else:
+        output["quality_status"]="partial" if successful else "no_usable_data"
     if successful:
         OUT.parent.mkdir(parents=True,exist_ok=True)
         OUT.write_text(json.dumps(output,ensure_ascii=False,indent=2,allow_nan=False),encoding="utf-8")
