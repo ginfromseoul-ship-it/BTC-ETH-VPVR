@@ -1,74 +1,60 @@
 {
-  "collected_utc": "2026-10-22T07:46:21.538000Z",
+  "collected_utc": "2026-10-22T07:56:17.228000Z",
   "source": "Binance public spot market-data and USD-M futures REST endpoints",
-  "market_scope": "Binance BTCUSDT ETHUSDT spot and USDT-margined perpetual futures (separate)",
+  "market_scope": "Binance BTCUSDT ETHUSDT spot plus Binance USD-M futures where allowed; Bybit linear perp separately labeled",
   "cadence": "approx 15min GitHub Actions scheduler; not real-time or continuous surveillance",
   "assets": {
     "BTCUSDT": {
       "symbol": "BTCUSDT",
       "spot": {
         "flow": {
-          "last_closed_bar_utc": "2026-10-22T07:45:00Z",
-          "latest_close_usdt": 82287.47,
+          "last_closed_bar_utc": "2026-10-22T07:55:00Z",
+          "latest_close_usdt": 82227.85,
           "windows": {
             "1h": {
               "status": "ok",
-              "taker_buy_quote_usdt": 47435162.72,
-              "taker_sell_quote_usdt": 61837894.92,
-              "cvd_delta_quote_usdt": -14402732.2,
-              "taker_buy_base": 575.67579,
-              "taker_sell_base": 750.5675,
-              "cvd_delta_base": -174.89171,
-              "buy_share_quote_pct": 43.41,
-              "price_change_pct": -0.2735,
+              "taker_buy_quote_usdt": 43492486.85,
+              "taker_sell_quote_usdt": 58710390.53,
+              "cvd_delta_quote_usdt": -15217903.67,
+              "taker_buy_base": 528.35614,
+              "taker_sell_base": 713.07888,
+              "cvd_delta_base": -184.72274,
+              "buy_share_quote_pct": 42.555,
+              "price_change_pct": -0.386,
               "n_bars": 12,
-              "start_utc": "2026-10-22T06:45:00Z",
-              "end_utc": "2026-10-22T07:45:00Z"
+              "start_utc": "2026-10-22T06:55:00Z",
+              "end_utc": "2026-10-22T07:55:00Z"
             },
             "4h": {
               "status": "ok",
-              "taker_buy_quote_usdt": 122615013.7,
-              "taker_sell_quote_usdt": 179115315.08,
-              "cvd_delta_quote_usdt": -56500301.38,
-              "taker_buy_base": 1483.64291,
-              "taker_sell_base": 2166.91055,
-              "cvd_delta_base": -683.26764,
-              "buy_share_quote_pct": 40.637,
-              "price_change_pct": -0.7771,
+              "taker_buy_quote_usdt": 129423536.07,
+              "taker_sell_quote_usdt": 182291550.31,
+              "cvd_delta_quote_usdt": -52868014.24,
+              "taker_buy_base": 1566.70631,
+              "taker_sell_base": 2206.11201,
+              "cvd_delta_base": -639.4057,
+              "buy_share_quote_pct": 41.52,
+              "price_change_pct": -0.7379,
               "n_bars": 48,
-              "start_utc": "2026-10-22T03:45:00Z",
-              "end_utc": "2026-10-22T07:45:00Z"
+              "start_utc": "2026-10-22T03:55:00Z",
+              "end_utc": "2026-10-22T07:55:00Z"
             },
             "24h": {
               "status": "ok",
-              "taker_buy_quote_usdt": 798483893.09,
-              "taker_sell_quote_usdt": 996439012.29,
-              "cvd_delta_quote_usdt": -197955119.2,
-              "taker_buy_base": 9531.14719,
-              "taker_sell_base": 11902.19806,
-              "cvd_delta_base": -2371.05087,
-              "buy_share_quote_pct": 44.486,
-              "price_change_pct": -1.0531,
+              "taker_buy_quote_usdt": 800539592.98,
+              "taker_sell_quote_usdt": 997483650.44,
+              "cvd_delta_quote_usdt": -196944057.46,
+              "taker_buy_base": 9557.18584,
+              "taker_sell_base": 11916.00379,
+              "cvd_delta_base": -2358.81795,
+              "buy_share_quote_pct": 44.523,
+              "price_change_pct": -1.1456,
               "n_bars": 288,
-              "start_utc": "2026-10-21T07:45:00Z",
-              "end_utc": "2026-10-22T07:45:00Z"
+              "start_utc": "2026-10-21T07:55:00Z",
+              "end_utc": "2026-10-22T07:55:00Z"
             }
           },
           "last_5m_bars": [
-            {
-              "start_utc": "2026-10-22T03:45:00Z",
-              "close": 82921.76,
-              "taker_buy_quote_usdt": 1593241.71,
-              "taker_sell_quote_usdt": 2718034.81,
-              "cvd_delta_quote_usdt": -1124793.1
-            },
-            {
-              "start_utc": "2026-10-22T03:50:00Z",
-              "close": 82839.11,
-              "taker_buy_quote_usdt": 1213086.67,
-              "taker_sell_quote_usdt": 2960483.7,
-              "cvd_delta_quote_usdt": -1747397.03
-            },
             {
               "start_utc": "2026-10-22T03:55:00Z",
               "close": 82925.14,
@@ -390,25 +376,39 @@
               "taker_buy_quote_usdt": 3102532.48,
               "taker_sell_quote_usdt": 2032146.87,
               "cvd_delta_quote_usdt": 1070385.6
+            },
+            {
+              "start_utc": "2026-10-22T07:45:00Z",
+              "close": 82247.85,
+              "taker_buy_quote_usdt": 3490744.39,
+              "taker_sell_quote_usdt": 2007828.39,
+              "cvd_delta_quote_usdt": 1482916.0
+            },
+            {
+              "start_utc": "2026-10-22T07:50:00Z",
+              "close": 82227.85,
+              "taker_buy_quote_usdt": 6124106.36,
+              "taker_sell_quote_usdt": 6846925.35,
+              "cvd_delta_quote_usdt": -722818.99
             }
           ]
         },
         "depth": {
-          "observed_utc": "2026-10-22T07:46:21.538000Z",
+          "observed_utc": "2026-10-22T07:56:17.228000Z",
           "exchange_event_time_utc": null,
-          "mid_usdt": 82302.775,
-          "best_bid": 82302.77,
-          "best_ask": 82302.78,
+          "mid_usdt": 82246.465,
+          "best_bid": 82246.46,
+          "best_ask": 82246.47,
           "spread_bps": 0.0012,
           "levels_returned_bids": 1000,
           "levels_returned_asks": 1000,
           "depth_bands": {
             "plus_minus_0.1pct": {
-              "bid_notional_usdt": 7985508.78,
-              "ask_notional_usdt": 9613397.07,
+              "bid_notional_usdt": 7098846.15,
+              "ask_notional_usdt": 7947353.83,
               "coverage_complete_bid": true,
               "coverage_complete_ask": true,
-              "bid_ask_ratio": 0.8307
+              "bid_ask_ratio": 0.8932
             },
             "plus_minus_0.5pct": {
               "bid_notional_usdt": null,
@@ -451,80 +451,99 @@
         "futures_flow": "unavailable",
         "futures_depth": "unavailable",
         "futures_oi": "unavailable",
-        "futures_funding": "unavailable"
+        "futures_funding": "unavailable",
+        "bybit_linear_ticker": "unavailable",
+        "bybit_linear_open_interest_history": "unavailable",
+        "bybit_linear_depth": "unavailable"
       },
       "limitations": [
         "Kline taker-buy vs remainder is a 5m aggregated trade-direction proxy; no trade-level reconstruction.",
         "Order-book depth is a momentary snapshot, not executed absorption or historical cancellations.",
         "Reported liquidation totals: unavailable; cannot infer liquidations from OI alone.",
         "Spot/futures causality or precise leader: not determined automatically."
-      ]
+      ],
+      "bybit_linear": {
+        "venue": "Bybit",
+        "instrument": "BTCUSDT",
+        "product": "USDT linear perpetual",
+        "quality": {
+          "ticker": "unavailable",
+          "open_interest_history": "unavailable",
+          "depth": "unavailable"
+        },
+        "limitations": [
+          "Not Binance futures. Never combine venue-specific OI or book depth.",
+          "Recent public trades are a limited sample, not complete 1h/4h/24h derivatives CVD."
+        ],
+        "ticker": {
+          "status": "unavailable",
+          "reason": "/v5/market/tickers: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+        },
+        "open_interest_history": {
+          "status": "unavailable",
+          "reason": "/v5/market/open-interest: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+        },
+        "depth": {
+          "status": "unavailable",
+          "reason": "/v5/market/orderbook: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+        },
+        "cvd_1h_4h_24h": {
+          "status": "unavailable",
+          "reason": "Bybit 5m kline lacks taker buy/sell data; complete historical trade tape not collected"
+        }
+      }
     },
     "ETHUSDT": {
       "symbol": "ETHUSDT",
       "spot": {
         "flow": {
-          "last_closed_bar_utc": "2026-10-22T07:45:00Z",
-          "latest_close_usdt": 2430.25,
+          "last_closed_bar_utc": "2026-10-22T07:55:00Z",
+          "latest_close_usdt": 2430.15,
           "windows": {
             "1h": {
               "status": "ok",
-              "taker_buy_quote_usdt": 12432469.42,
-              "taker_sell_quote_usdt": 9643333.4,
-              "cvd_delta_quote_usdt": 2789136.02,
-              "taker_buy_base": 5115.549,
-              "taker_sell_base": 3968.4323,
-              "cvd_delta_base": 1147.1167,
-              "buy_share_quote_pct": 56.317,
-              "price_change_pct": -0.0641,
+              "taker_buy_quote_usdt": 12509010.8,
+              "taker_sell_quote_usdt": 10424619.53,
+              "cvd_delta_quote_usdt": 2084391.27,
+              "taker_buy_base": 5147.5252,
+              "taker_sell_base": 4290.4468,
+              "cvd_delta_base": 857.0784,
+              "buy_share_quote_pct": 54.544,
+              "price_change_pct": -0.1549,
               "n_bars": 12,
-              "start_utc": "2026-10-22T06:45:00Z",
-              "end_utc": "2026-10-22T07:45:00Z"
+              "start_utc": "2026-10-22T06:55:00Z",
+              "end_utc": "2026-10-22T07:55:00Z"
             },
             "4h": {
               "status": "ok",
-              "taker_buy_quote_usdt": 29800283.13,
-              "taker_sell_quote_usdt": 35377955.3,
-              "cvd_delta_quote_usdt": -5577672.16,
-              "taker_buy_base": 12230.2364,
-              "taker_sell_base": 14511.8739,
-              "cvd_delta_base": -2281.6375,
-              "buy_share_quote_pct": 45.721,
-              "price_change_pct": -0.5349,
+              "taker_buy_quote_usdt": 30225106.26,
+              "taker_sell_quote_usdt": 36613735.77,
+              "cvd_delta_quote_usdt": -6388629.51,
+              "taker_buy_base": 12407.2201,
+              "taker_sell_base": 15023.3443,
+              "cvd_delta_base": -2616.1242,
+              "buy_share_quote_pct": 45.221,
+              "price_change_pct": -0.4714,
               "n_bars": 48,
-              "start_utc": "2026-10-22T03:45:00Z",
-              "end_utc": "2026-10-22T07:45:00Z"
+              "start_utc": "2026-10-22T03:55:00Z",
+              "end_utc": "2026-10-22T07:55:00Z"
             },
             "24h": {
               "status": "ok",
-              "taker_buy_quote_usdt": 416129158.48,
-              "taker_sell_quote_usdt": 425730921.3,
-              "cvd_delta_quote_usdt": -9601762.82,
-              "taker_buy_base": 167908.622,
-              "taker_sell_base": 172047.5476,
-              "cvd_delta_base": -4138.9256,
-              "buy_share_quote_pct": 49.43,
-              "price_change_pct": -0.9496,
+              "taker_buy_quote_usdt": 410432098.09,
+              "taker_sell_quote_usdt": 423798008.88,
+              "cvd_delta_quote_usdt": -13365910.79,
+              "taker_buy_base": 165593.6696,
+              "taker_sell_base": 171270.5754,
+              "cvd_delta_base": -5676.9058,
+              "buy_share_quote_pct": 49.199,
+              "price_change_pct": -1.1334,
               "n_bars": 288,
-              "start_utc": "2026-10-21T07:45:00Z",
-              "end_utc": "2026-10-22T07:45:00Z"
+              "start_utc": "2026-10-21T07:55:00Z",
+              "end_utc": "2026-10-22T07:55:00Z"
             }
           },
           "last_5m_bars": [
-            {
-              "start_utc": "2026-10-22T03:45:00Z",
-              "close": 2444.29,
-              "taker_buy_quote_usdt": 623904.59,
-              "taker_sell_quote_usdt": 849665.75,
-              "cvd_delta_quote_usdt": -225761.15
-            },
-            {
-              "start_utc": "2026-10-22T03:50:00Z",
-              "close": 2441.65,
-              "taker_buy_quote_usdt": 323474.99,
-              "taker_sell_quote_usdt": 392526.39,
-              "cvd_delta_quote_usdt": -69051.4
-            },
             {
               "start_utc": "2026-10-22T03:55:00Z",
               "close": 2444.66,
@@ -846,32 +865,46 @@
               "taker_buy_quote_usdt": 316559.97,
               "taker_sell_quote_usdt": 953728.24,
               "cvd_delta_quote_usdt": -637168.27
+            },
+            {
+              "start_utc": "2026-10-22T07:45:00Z",
+              "close": 2429.59,
+              "taker_buy_quote_usdt": 845231.04,
+              "taker_sell_quote_usdt": 766126.79,
+              "cvd_delta_quote_usdt": 79104.25
+            },
+            {
+              "start_utc": "2026-10-22T07:50:00Z",
+              "close": 2430.15,
+              "taker_buy_quote_usdt": 526971.67,
+              "taker_sell_quote_usdt": 1711845.82,
+              "cvd_delta_quote_usdt": -1184874.15
             }
           ]
         },
         "depth": {
-          "observed_utc": "2026-10-22T07:46:21.538000Z",
+          "observed_utc": "2026-10-22T07:56:17.228000Z",
           "exchange_event_time_utc": null,
-          "mid_usdt": 2431.275,
-          "best_bid": 2431.27,
-          "best_ask": 2431.28,
+          "mid_usdt": 2430.465,
+          "best_bid": 2430.46,
+          "best_ask": 2430.47,
           "spread_bps": 0.0411,
           "levels_returned_bids": 1000,
           "levels_returned_asks": 1000,
           "depth_bands": {
             "plus_minus_0.1pct": {
-              "bid_notional_usdt": 3784846.06,
-              "ask_notional_usdt": 2388929.45,
+              "bid_notional_usdt": 2921161.97,
+              "ask_notional_usdt": 1989246.81,
               "coverage_complete_bid": true,
               "coverage_complete_ask": true,
-              "bid_ask_ratio": 1.5843
+              "bid_ask_ratio": 1.4685
             },
             "plus_minus_0.5pct": {
-              "bid_notional_usdt": 10422640.22,
-              "ask_notional_usdt": 7051520.04,
+              "bid_notional_usdt": 8559823.01,
+              "ask_notional_usdt": 6435824.5,
               "coverage_complete_bid": true,
               "coverage_complete_ask": true,
-              "bid_ask_ratio": 1.4781
+              "bid_ask_ratio": 1.33
             },
             "plus_minus_1pct": {
               "bid_notional_usdt": null,
@@ -907,14 +940,47 @@
         "futures_flow": "unavailable",
         "futures_depth": "unavailable",
         "futures_oi": "unavailable",
-        "futures_funding": "unavailable"
+        "futures_funding": "unavailable",
+        "bybit_linear_ticker": "unavailable",
+        "bybit_linear_open_interest_history": "unavailable",
+        "bybit_linear_depth": "unavailable"
       },
       "limitations": [
         "Kline taker-buy vs remainder is a 5m aggregated trade-direction proxy; no trade-level reconstruction.",
         "Order-book depth is a momentary snapshot, not executed absorption or historical cancellations.",
         "Reported liquidation totals: unavailable; cannot infer liquidations from OI alone.",
         "Spot/futures causality or precise leader: not determined automatically."
-      ]
+      ],
+      "bybit_linear": {
+        "venue": "Bybit",
+        "instrument": "ETHUSDT",
+        "product": "USDT linear perpetual",
+        "quality": {
+          "ticker": "unavailable",
+          "open_interest_history": "unavailable",
+          "depth": "unavailable"
+        },
+        "limitations": [
+          "Not Binance futures. Never combine venue-specific OI or book depth.",
+          "Recent public trades are a limited sample, not complete 1h/4h/24h derivatives CVD."
+        ],
+        "ticker": {
+          "status": "unavailable",
+          "reason": "/v5/market/tickers: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+        },
+        "open_interest_history": {
+          "status": "unavailable",
+          "reason": "/v5/market/open-interest: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+        },
+        "depth": {
+          "status": "unavailable",
+          "reason": "/v5/market/orderbook: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+        },
+        "cvd_1h_4h_24h": {
+          "status": "unavailable",
+          "reason": "Bybit 5m kline lacks taker buy/sell data; complete historical trade tape not collected"
+        }
+      }
     }
   },
   "quality_status": "partial_core",
@@ -922,6 +988,7 @@
     "No exact order-flow absorption conclusion can be drawn from intermittent depth snapshots.",
     "No public complete retrospective liquidation tape provided by this script; no invented liquidation totals.",
     "Order book USD-depth reports only when the requested range fits within returned 1000 levels.",
-    "OI open contracts vs OI notional must be interpreted separately."
+    "OI open contracts vs OI notional must be interpreted separately.",
+    "Binance futures returned HTTP 451 on initial GitHub runner test; Bybit linear fallback is separately labeled when available."
   ]
 }
