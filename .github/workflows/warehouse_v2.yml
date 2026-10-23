@@ -1,9 +1,11 @@
 name: BTC ETH Research Warehouse V2
-# RESEARCH_WAREHOUSE_VERSION: 2026-10-23-v2
+# RESEARCH_WAREHOUSE_VERSION: 2026-10-23-v2-daily
 # Does not modify the original market_database.yml or original SQLite artifact.
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '23 21 * * *'  # 06:23 Asia/Seoul, after the 20:49 UTC backfill
 
 permissions:
   contents: write
@@ -270,7 +272,7 @@ jobs:
           def main():
               now=int(datetime.now(timezone.utc).timestamp())
               result={'generated_utc':utc(now),'schema_version':2,'status':'unverified',
-                  'database_export':'GitHub Actions artifact btc-eth-market-research-v2, 30 day retention',
+                  'database_export':'GitHub Actions artifact btc-eth-market-research-v2, 7 day retention',
                   'guard_seconds':GUARD,'guard_warning':'Historical timestamp assumed available after +5m. This is not independently measured: verify archived release timings before trusting trading signals.',
                   'missingness_policy':'Missing Binance OI stays NULL. Never carry forward missing 5m OI, and do not substitute Coinalyze OI; actual funding stays separate from provider estimate.',
                   'source_time_semantics':'Binance OI t is observation end; Binance funding t is settlement event time; research row end_t is decision-candle close.',
@@ -305,7 +307,7 @@ jobs:
         with:
           name: btc-eth-market-research-v2
           path: data/warehouse/btc_eth_market_v2.sqlite
-          retention-days: 2
+          retention-days: 7
           compression-level: 6
           if-no-files-found: error
       - name: Preserve validation manifest

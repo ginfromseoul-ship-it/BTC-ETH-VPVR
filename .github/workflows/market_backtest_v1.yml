@@ -1,0 +1,263 @@
+name: BTC ETH Market Structure Backtest V1
+# Fixed-threshold, long-only, research-only validation. Never places trades.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: btc-eth-market-backtest-v1
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out research repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download latest completed V2 research SQLite
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p data/warehouse
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/warehouse_v2.yml/runs?status=success&per_page=25" --jq '.workflow_runs[].id' > /tmp/warehouse_runs.txt
+          test -s /tmp/warehouse_runs.txt || { echo 'No successful V2 run. Run warehouse_v2.yml first.' >&2; exit 1; }
+          ok=0
+          while read -r run; do
+            rm -f data/warehouse/btc_eth_market_v2.sqlite
+            if gh run download "$run" -R "$GITHUB_REPOSITORY" -n btc-eth-market-research-v2 -D data/warehouse; then
+              if test -s data/warehouse/btc_eth_market_v2.sqlite; then
+                echo "Used warehouse workflow run $run"
+                ok=1
+                break
+              fi
+            fi
+          done < /tmp/warehouse_runs.txt
+          if [ "$ok" -ne 1 ]; then
+            echo 'All recent V2 artifacts missing or expired. Run warehouse_v2.yml first.' >&2
+            exit 1
+          fi
+          sha256sum data/warehouse/btc_eth_market_v2.sqlite
+      - name: Run pre-registered signal and control-group analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/market_structure_backtest.py <<'PY_BACKTEST'
+          #!/usr/bin/env python3
+          """Research-only fixed-hypothesis BTC/ETH long-entry backtest against a dip-only control.
+
+          Point-in-time caution: vendor historical publication times are NOT audited.
+          Execution at the next-next bar open (5 min after signal candle closes).
+          Results require independent forward validation before becoming trading signals.
+          """
+          import csv
+          import json
+          import math
+          import os
+          import sqlite3
+          import statistics
+          from bisect import bisect_left
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          DB = Path(os.getenv('MARKET_DB_PATH','data/warehouse/btc_eth_market_v2.sqlite'))
+          OUT = Path(os.getenv('BACKTEST_OUTPUT_DIR','data/backtest_results'))
+          PERIODS = {"1h":12, "4h":48, "24h":288}
+          COST_FRACTION = .0014  # 0.04% taker + 0.03% slippage each way, futures notional
+          MIN_SAMPLE = 30
+          REQUIRED = ['t','end_t','spot_taker_delta_quote_usdt','futures_taker_delta_native',
+                      'binance_oi_native','binance_oi_observed_t','future_close']
+          CONFIG = {
+            'BTC': {'fall_4h':-.025,'oi_drop_4h':-.002},
+            'ETH': {'fall_4h':-.035,'oi_drop_4h':-.002},
+          }
+
+
+          def utc(ts):
+              return datetime.fromtimestamp(ts,timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+          def summary(samples):
+              if not samples: return {'n':0,'win_rate_pct':None,'mean_net_pct':None,'median_net_pct':None,
+                                      'mean_mae_pct':None,'worst_mae_pct':None,'mean_mfe_pct':None}
+              val=[a['net_return_pct'] for a in samples]
+              return {'n':len(val),'win_rate_pct':round(100*sum(v>0 for v in val)/len(val),2),
+                      'mean_net_pct':round(statistics.mean(val),3),
+                      'median_net_pct':round(statistics.median(val),3),
+                      'mean_mae_pct':round(statistics.mean(a['mae_pct'] for a in samples),3),
+                      'worst_mae_pct':round(min(a['mae_pct'] for a in samples),3),
+                      'mean_mfe_pct':round(statistics.mean(a['mfe_pct'] for a in samples),3)}
+
+
+          def evaluate(rows,signal_indices,horizon,phase_cut):
+              events=[]
+              for i in signal_indices:
+                  entry_idx=i+2  # 5m publication/execution buffer after completed signal candle
+                  exit_idx=entry_idx+horizon
+                  if exit_idx>=len(rows): continue
+                  if rows[exit_idx]['t']-rows[entry_idx]['t']!=300*horizon: continue
+                  # Purge development events whose forward result crosses into the holdout.
+                  if rows[i]['t'] < phase_cut and rows[exit_idx]['t'] >= phase_cut: continue
+                  entry=rows[entry_idx]['future_open']
+                  exit_=rows[exit_idx]['future_open']
+                  if entry<=0 or exit_<=0: continue
+                  session=rows[entry_idx:exit_idx]
+                  if len(session)!=horizon: continue
+                  mae=(min(r['low'] for r in session)/entry-1)*100
+                  mfe=(max(r['high'] for r in session)/entry-1)*100
+                  ret=(exit_/entry-1-COST_FRACTION)*100
+                  events.append({'signal_utc':utc(rows[i]['end_t']),'entry_utc':utc(rows[entry_idx]['t']),
+                                 'exit_utc':utc(rows[exit_idx]['t']),'phase':'development' if rows[i]['t']<phase_cut else 'holdout',
+                                 'horizon':next((name for name,val in PERIODS.items() if val==horizon),str(horizon)),
+                                 'entry':round(entry,8),'exit':round(exit_,8),
+                                 'net_return_pct':round(ret,4),'mae_pct':round(mae,4),'mfe_pct':round(mfe,4)})
+              return events
+
+
+          def candidates(rows,sym):
+              cfg=CONFIG[sym]
+              events=[]; controls=[]; invalid=0
+              for i in range(60,len(rows)-290):
+                  # No gaps inside the full input window, including the OI measurement changes.
+                  if rows[i]['t']-rows[i-60]['t']!=60*300:continue
+                  p=rows[i]['future_close']; prior=rows[i-48]['future_close']
+                  if prior<=0:continue
+                  change=p/prior-1
+                  if change>cfg['fall_4h']:continue
+                  controls.append(i)
+                  # All historical OI snapshots referenced must be available and non-null.
+                  oi_now=rows[i]['binance_oi_native']
+                  oi_hour=rows[i-12]['binance_oi_native']
+                  oi_4h=rows[i-48]['binance_oi_native']
+                  if any(x is None or x<=0 for x in (oi_now,oi_hour,oi_4h)):
+                      invalid+=1;continue
+                  # Require exact causally-delayed OI, never a forward-filled missing interval.
+                  if any(rows[j]['binance_oi_native'] is None for j in (i,i-12,i-48)):
+                      invalid+=1;continue
+                  oi_change_4h=oi_now/oi_4h-1
+                  oi_change_1h=oi_now/oi_hour-1
+                  if oi_change_4h>cfg['oi_drop_4h'] or oi_change_1h<-.001:continue
+                  if rows[i]['spot_taker_delta_quote_usdt']<=0:continue
+                  def imbalance(a,b):
+                      data=rows[a:b]
+                      vol=sum(r['v_quote_usdt'] for r in data)
+                      return sum(r['spot_taker_delta_quote_usdt'] for r in data)/vol if vol>0 else None
+                  recent=imbalance(i-11,i+1); earlier=imbalance(i-23,i-11)
+                  if recent is None or earlier is None or recent-earlier<.02:continue
+                  # Research rows already enforce an assumed 5 minute OI availability buffer.
+                  if rows[i]['binance_oi_observed_t'] is None or rows[i]['binance_oi_observed_t']+300>rows[i]['end_t']:
+                      invalid+=1;continue
+                  events.append(i)
+              def cooldown(indices):
+                  # One independent entry maximum per rolling 24h for each cohort.
+                  chosen=[];last=-10**10
+                  for j in indices:
+                      if rows[j]['t']-last<24*3600: continue
+                      chosen.append(j);last=rows[j]['t']
+                  return chosen
+              return cooldown(events),cooldown(controls),invalid
+
+
+          def main():
+              if not DB.is_file():raise SystemExit(f'DATABASE NOT FOUND: {DB}')
+              OUT.mkdir(parents=True,exist_ok=True)
+              cn=sqlite3.connect(f'file:{DB}?mode=ro',uri=True)
+              cn.row_factory=sqlite3.Row
+              if cn.execute('pragma integrity_check').fetchone()[0]!='ok':raise SystemExit('sqlite integrity failed')
+              columns={row['name'] for row in cn.execute('pragma table_info(research_5m)')}
+              if any(c not in columns for c in REQUIRED):raise SystemExit('expected V2 research schema is missing fields')
+              report={'generated_utc':utc(int(datetime.now(timezone.utc).timestamp())),
+                      'strategy_version':'fixed-proxy-hypothesis-v1','provisional':True,
+                      'source':'BTC ETH Research Warehouse V2, Binance USD-M futures + spot + historical OI',
+                      'estimated_roundtrip_cost_pct':round(COST_FRACTION*100,3),
+                      'cost_assumptions':'2 x (0.04% taker fee + 0.03% slippage) per trade; funding P&L excluded',
+                      'signal':'4h futures drop <=-2.5% BTC/-3.5% ETH; 4h OI change <= -0.2%, 1h OI >=-0.1%; past-1h spot volume-weighted taker imbalance improves >=2pp versus preceding hour; latest 5m spot buy delta positive',
+                      'entry':'Next-next 5m candle open after complete signal bar (one 5m processing buffer)',
+                      'exit':'Entry open to 1/4/24h later futures open',
+                      'control':'Price drop only with identical symbol, entry delay and 24h cooldown',
+                      'sampling':'Chronological first 70% development, last 30% holdout; fixed thresholds, no tuning; one signal per 24h',
+                      'limitations':['No historical forced-liquidation confirmation (proxy only)',
+                                     'Exchange/vender original publication delay for OI not independently verified',
+                                     'Historical funding payments, hedges, carry, leverage margin and real execution not modeled',
+                                     'Strong market-regime effects possible; nonrandom control group, avoid causal interpretation',
+                                     'N below 30 is exploratory, not significant'],
+                      'symbols':{}}
+              all_events=[]
+              for sym in ('BTC','ETH'):
+                  query='''SELECT r.t,r.end_t,r.future_close,r.future_open,r.spot_taker_delta_quote_usdt,
+                             r.futures_taker_delta_native,r.binance_oi_native,r.binance_oi_observed_t,
+                             s.v_quote_usdt,f.h AS high,f.l AS low
+                           FROM research_5m r JOIN spot_5m s ON s.symbol=r.symbol AND s.t=r.t
+                           JOIN futures_5m f ON f.symbol=r.symbol AND f.t=r.t
+                           WHERE r.symbol=? ORDER BY r.t'''
+                  rows=[dict(x) for x in cn.execute(query,(sym,))]
+                  if len(rows)<2000:raise SystemExit(sym+' insufficient historical bars')
+                  phase_cut=rows[0]['t']+int((rows[-1]['t']-rows[0]['t'])*0.7)//300*300
+                  selected,controls,invalid=candidates(rows,sym)
+                  section={'first_utc':utc(rows[0]['t']),'last_utc':utc(rows[-1]['t']),
+                           'total_5m_bars':len(rows),'OI_non_null':sum(x['binance_oi_native'] is not None for x in rows),
+                           'phase_split_utc':utc(phase_cut),'signals_nonoverlap':len(selected),
+                           'dip_only_controls_nonoverlap':len(controls),'dips_missing_OI':invalid,'horizons':{}}
+                  for name,h in PERIODS.items():
+                      result={}
+                      for typ,indices in [('candidate',selected),('dip_only_control',controls)]:
+                          events=evaluate(rows,indices,h,phase_cut)
+                          for a in events: a.update({'symbol':sym,'type':typ})
+                          all_events+=events
+                          result[typ]={'overall':summary(events),
+                                       'development':summary([e for e in events if e['phase']=='development']),
+                                       'holdout':summary([e for e in events if e['phase']=='holdout'])}
+                      result['holdout_comparison_mean_net_pp']=(
+                        round(result['candidate']['holdout']['mean_net_pct']-result['dip_only_control']['holdout']['mean_net_pct'],3)
+                        if all(result[q]['holdout']['mean_net_pct'] is not None for q in ('candidate','dip_only_control')) else None)
+                      section['horizons'][name]=result
+                  report['symbols'][sym]=section
+              cn.close()
+              with (OUT/'backtest_events.csv').open('w',newline='',encoding='utf8') as f:
+                  writer=csv.DictWriter(f,fieldnames=['symbol','type','signal_utc','entry_utc','exit_utc','phase','horizon','entry','exit','net_return_pct','mae_pct','mfe_pct'])
+                  writer.writeheader();writer.writerows(all_events)
+              (OUT/'first_backtest_report.json').write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf8')
+              print('BACKTEST COMPLETE',json.dumps({s:{'signals':v['signals_nonoverlap'],'controls':v['dip_only_controls_nonoverlap'],'holdout_24h':v['horizons']['24h']['candidate']['holdout']} for s,v in report['symbols'].items()}))
+
+
+          if __name__=='__main__':main()
+          PY_BACKTEST
+          python /tmp/market_structure_backtest.py
+      - name: Downloadable report and event sample
+        uses: actions/upload-artifact@v4
+        with:
+          name: btc-eth-market-backtest-v1
+          path: |
+            data/backtest_results/first_backtest_report.json
+            data/backtest_results/backtest_events.csv
+          retention-days: 30
+          if-no-files-found: error
+      - name: Persist compact reports for ChatGPT inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/backtest_results/first_backtest_report.json data/backtest_results/backtest_events.csv
+          if git diff --cached --quiet; then echo 'Report unchanged'; exit 0; fi
+          git commit -m 'Record BTC ETH preliminary market-structure backtest'
+          for i in 1 2 3 4 5; do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep "$((i*2))"
+          done
+          echo 'Failed to persist backtest report' >&2
+          exit 1
