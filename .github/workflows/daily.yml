@@ -1,5 +1,3 @@
-
-
 name: Daily Binance BTC ETH VPVR
 
 on:
@@ -10,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: btc-eth-vpvr-daily
+  cancel-in-progress: false
+
 jobs:
   calculate:
     runs-on: ubuntu-latest
@@ -18,6 +20,8 @@ jobs:
     steps:
       - name: Download repository
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -30,12 +34,27 @@ jobs:
       - name: Calculate BTC and ETH VPVR
         run: python volume_profile_daily.py
 
-      - name: Save calculated results
+      - name: Save calculated results, tolerate concurrent commits
+        shell: bash
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/volume_profile_summary.json
-          if ! git diff --cached --quiet; then
-            git commit -m "Update BTC ETH volume profiles"
-            git push
+          if git diff --cached --quiet; then
+            echo "VPVR data unchanged; nothing to save."
+            exit 0
           fi
+          git commit -m "Update BTC ETH volume profiles"
+          for attempt in 1 2 3 4 5; do
+            echo "Commit attempt ${attempt}/5"
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then
+              echo "VPVR result committed successfully"
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          echo "Failed to save VPVR despite five retries" >&2
+          exit 1
