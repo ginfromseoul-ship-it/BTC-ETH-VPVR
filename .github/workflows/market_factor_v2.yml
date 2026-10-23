@@ -1,0 +1,211 @@
+name: BTC ETH Market Factor Diagnostic V2
+# Exploratory factor attribution, long-only, research-only; never places trades.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: btc-eth-market-factor-diagnostic-v2
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout market archives
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download successful V2 SQLite artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p data/warehouse
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/warehouse_v2.yml/runs?status=success&per_page=25" --jq '.workflow_runs[].id' > /tmp/v2_runs.txt
+          test -s /tmp/v2_runs.txt || { echo 'First execute warehouse_v2.yml' >&2; exit 1; }
+          found=0
+          while read -r run; do
+            rm -f data/warehouse/btc_eth_market_v2.sqlite
+            if gh run download "$run" -R "$GITHUB_REPOSITORY" -n btc-eth-market-research-v2 -D data/warehouse; then
+              test -s data/warehouse/btc_eth_market_v2.sqlite || continue
+              echo "Research database from run $run"
+              found=1
+              break
+            fi
+          done < /tmp/v2_runs.txt
+          test "$found" -eq 1 || { echo 'No downloadable V2 artifact: run warehouse_v2.yml' >&2; exit 1; }
+          sha256sum data/warehouse/btc_eth_market_v2.sqlite
+      - name: Compare separate market-flow components on common dip events
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/market_factor_diagnostic_v2.py <<'PY_FACTOR_V2'
+          #!/usr/bin/env python3
+          """Exploratory decomposition of BTC/ETH reversal observations, not a trading strategy.
+          Point-in-time caveat: historical Binance OI publication latency has NOT been independently verified.
+          A 5-minute assumed buffer is used, and gaps remain missing.
+          """
+          import csv, json, math, os, sqlite3, statistics
+          from pathlib import Path
+          from datetime import datetime, timezone
+          
+          DB=Path(os.getenv('MARKET_DB_PATH','data/warehouse/btc_eth_market_v2.sqlite'))
+          OUT=Path(os.getenv('MARKET_RESEARCH_OUTPUT','data/market_factor_v2'))
+          COST=0.0014
+          # Fixed diagnostic shock definition, deliberately less severe than V1. Not optimized.
+          SHOCK={'BTC':-.015,'ETH':-.020}
+          HORIZONS={'1h':12,'4h':48,'24h':288}
+          MIN_DIAGNOSTIC_N=30
+          
+          
+          def when(t):return datetime.fromtimestamp(t,timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+          
+          def mean(a):return round(statistics.mean(a),3) if a else None
+          
+          def summary(e):
+              if not e:return {'n':0,'mean_4h_net_pct':None,'win_rate_4h_pct':None,'worst_24h_mae_pct':None,'mean_24h_net_pct':None,'mean_1h_net_pct':None}
+              return {'n':len(e),'mean_1h_net_pct':mean([x['ret_1h'] for x in e]),
+                      'mean_4h_net_pct':mean([x['ret_4h'] for x in e]),
+                      'win_rate_4h_pct':round(sum(x['ret_4h']>0 for x in e)/len(e)*100,2),
+                      'mean_24h_net_pct':mean([x['ret_24h'] for x in e]),
+                      'worst_24h_mae_pct':round(min(x['mae_24h'] for x in e),3)}
+          
+          
+          def interval_imbalance(rows,lo,hi,vol_key,delta_key):
+              d=rows[lo:hi];den=sum(x[vol_key] for x in d)
+              return sum(x[delta_key] for x in d)/den if den>0 else None
+          
+          
+          def scan(rows,symbol):
+              t0=rows[0]['t'];phase_cut=t0+int((rows[-1]['t']-t0)*.7//300)*300
+              emitted=[];cooldown_until=-10**15
+              skips={'non_contiguous':0,'missing_OI':0,'no_future':0}
+              for i in range(60,len(rows)-290):
+                  cur=rows[i]
+                  if cur['t'] < cooldown_until:continue
+                  if cur['t']-rows[i-60]['t']!=60*300 or rows[i+290]['t']-cur['t'] != 290*300:
+                      skips['non_contiguous']+=1;continue
+                  fall=cur['future_close']/rows[i-48]['future_close']-1
+                  if fall > SHOCK[symbol]:continue
+                  # A consistent, non-overlapping *base universe* is selected BEFORE any feature filtering.
+                  cooldown_until=cur['t']+24*3600
+                  # Entry occurs after next full 5m buffer; research row candle signal must close first.
+                  e=i+2
+                  entry=rows[e]['future_open']
+                  if not entry or entry<=0:skips['no_future']+=1;continue
+                  # Note: the 24h-outcome is not allowed to cross development/holdout cut.
+                  if cur['t']<phase_cut<=rows[e+288]['t']:continue
+                  spot_prev=interval_imbalance(rows,i-23,i-11,'v_quote_usdt','spot_taker_delta_quote_usdt')
+                  spot_now=interval_imbalance(rows,i-11,i+1,'v_quote_usdt','spot_taker_delta_quote_usdt')
+                  fut_prev=interval_imbalance(rows,i-23,i-11,'v_native','futures_taker_delta_native')
+                  fut_now=interval_imbalance(rows,i-11,i+1,'v_native','futures_taker_delta_native')
+                  a=spot_prev is not None and spot_now is not None and spot_now-spot_prev>=.02 and cur['spot_taker_delta_quote_usdt']>0
+                  c=fut_prev is not None and fut_now is not None and fut_now-fut_prev>=.02 and cur['futures_taker_delta_native']>0
+                  oi=[rows[j]['binance_oi_native'] for j in (i-48,i-12,i)]
+                  dates=[rows[j]['binance_oi_observed_t'] for j in (i-48,i-12,i)]
+                  oi_ok=all(v is not None and v>0 for v in oi) and all(t is not None and t+300<=rows[j]['end_t'] for t,j in zip(dates,(i-48,i-12,i)))
+                  b=(oi[2]/oi[0]-1<=-.002 and oi[2]/oi[1]-1 >= -.001) if oi_ok else None
+                  if not oi_ok:skips['missing_OI']+=1
+                  row={'symbol':symbol,'signal_utc':when(cur['end_t']),'entry_utc':when(rows[e]['t']),
+                       'phase':'development' if cur['t']<phase_cut else 'holdout','4h_fall_pct':round(fall*100,4),
+                       'spot_recovery':int(a),'OI_stabilization':None if b is None else int(b),'futures_flow_recovery':int(c),
+                       'spot_imbalance_change_pp':round((spot_now-spot_prev)*100,3) if spot_now is not None and spot_prev is not None else None,
+                       'futures_imbalance_change_pp':round((fut_now-fut_prev)*100,3) if fut_now is not None and fut_prev is not None else None}
+                  for k,h in HORIZONS.items():
+                      exit_open=rows[e+h]['future_open']
+                      row['ret_'+k]=round((exit_open/entry-1-COST)*100,4)
+                      row['mae_'+k]=round((min(rows[j]['low'] for j in range(e,e+h))/entry-1)*100,4)
+                  emitted.append(row)
+              return emitted,skips,when(phase_cut)
+          
+          
+          def audit():
+              cn=sqlite3.connect('file:'+str(DB.resolve())+'?mode=ro',uri=True);cn.row_factory=sqlite3.Row
+              if cn.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise RuntimeError('sqlite corruption')
+              req={'t','end_t','future_close','future_open','spot_taker_delta_quote_usdt','futures_taker_delta_native','binance_oi_native','binance_oi_observed_t'}
+              available={c['name'] for c in cn.execute('pragma table_info(research_5m)')}
+              if not req.issubset(available):raise RuntimeError('v2 schema missing required columns')
+              report={'generated_utc':when(int(datetime.now(timezone.utc).timestamp())),'phase':'exploratory_feature_decomposition_v2',
+                      'not_for_live_trading':True,'cohort':'first fixed 4-hour shock per 24h after 5min-close; independent of subsequent feature results',
+                      'shock_thresholds_4h_pct':{s:100*p for s,p in SHOCK.items()},
+                      'features':{'spot_recovery':'1h spot taker imbalance improves by >=2pp vs preceding hour, and latest 5m delta is positive',
+                                  'OI_stabilization':'4h OI falls >=0.2% and last 1h OI falls no more than 0.1%',
+                                  'futures_flow_recovery':'1h futures taker imbalance improves by >=2pp vs preceding hour, and latest 5m delta is positive'},
+                      'execution':'entry at second subsequent 5min bar open, 0.14% assumed roundtrip cost, futures, no liquidation/funding',
+                      'caveats':['All feature groups are descriptive and overlap; not a matched causal estimate',
+                                 'Chosen exploratory shock thresholds are not preregistered; future holdout should start after this analysis',
+                                 'OI public dissemination times unavailable; simulated 5-minute guard not a verified release time',
+                                 'Funding payments and liquidation flow unmodeled',
+                                 'Most feature group samples will be too small for reliable conclusions'],
+                      'min_n_for_even_preliminary_interpretation':MIN_DIAGNOSTIC_N,'symbols':{}}
+              all_rows=[]
+              for symbol in ('BTC','ETH'):
+                  sql='''SELECT r.t,r.end_t,r.future_close,r.future_open,r.spot_taker_delta_quote_usdt,
+                           r.futures_taker_delta_native,r.binance_oi_native,r.binance_oi_observed_t,
+                           s.v_quote_usdt,f.v_native,f.h AS high,f.l AS low
+                           FROM research_5m r JOIN spot_5m s ON s.symbol=r.symbol AND s.t=r.t
+                           JOIN futures_5m f ON f.symbol=r.symbol AND f.t=r.t
+                           WHERE r.symbol=? ORDER BY r.t'''
+                  rows=[dict(x) for x in cn.execute(sql,(symbol,))]
+                  events,skips,cut=scan(rows,symbol);all_rows.extend(events)
+                  groups={'all_shocks':events,
+                          'spot_recovery_true':[x for x in events if x['spot_recovery']==1],
+                          'spot_recovery_false':[x for x in events if x['spot_recovery']==0],
+                          'OI_stabilization_true':[x for x in events if x['OI_stabilization']==1],
+                          'OI_stabilization_false':[x for x in events if x['OI_stabilization']==0],
+                          'futures_flow_true':[x for x in events if x['futures_flow_recovery']==1],
+                          'futures_flow_false':[x for x in events if x['futures_flow_recovery']==0],
+                          'all_three_true':[x for x in events if x['spot_recovery']==1 and x['OI_stabilization']==1 and x['futures_flow_recovery']==1]}
+                  report['symbols'][symbol]={'source_period_utc':[when(rows[0]['t']),when(rows[-1]['t'])],
+                      'phase_cut_utc':cut,'number_of_base_shocks':len(events),'skipped_checks':skips,
+                      'groups':{k:{'overall':summary(v),'development':summary([x for x in v if x['phase']=='development']),
+                                   'holdout':summary([x for x in v if x['phase']=='holdout']),
+                                   'sample_sufficient':len(v)>=MIN_DIAGNOSTIC_N} for k,v in groups.items()}}
+              cn.close()
+              OUT.mkdir(parents=True,exist_ok=True)
+              (OUT/'factor_diagnostic_v2.json').write_text(json.dumps(report,ensure_ascii=False,indent=2,allow_nan=False)+'\n')
+              with (OUT/'shock_events_v2.csv').open('w',newline='') as f:
+                  fields=['symbol','signal_utc','entry_utc','phase','4h_fall_pct','spot_recovery','OI_stabilization','futures_flow_recovery','spot_imbalance_change_pp','futures_imbalance_change_pp'] + [item for h in HORIZONS for item in ('ret_'+h,'mae_'+h)]
+                  w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(all_rows)
+              print(json.dumps({k:{'n':v['number_of_base_shocks'],'group_sizes':{a:b['overall']['n'] for a,b in v['groups'].items()}} for k,v in report['symbols'].items()},indent=2))
+          
+          if __name__=='__main__':audit()
+          PY_FACTOR_V2
+          MARKET_DB_PATH=data/warehouse/btc_eth_market_v2.sqlite MARKET_RESEARCH_OUTPUT=data/market_factor_v2 python /tmp/market_factor_diagnostic_v2.py
+      - name: Upload feature diagnostic report
+        uses: actions/upload-artifact@v4
+        with:
+          name: btc-eth-market-factor-diagnostic-v2
+          path: |
+            data/market_factor_v2/factor_diagnostic_v2.json
+            data/market_factor_v2/shock_events_v2.csv
+          retention-days: 30
+          if-no-files-found: error
+      - name: Commit compact research results
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/market_factor_v2/factor_diagnostic_v2.json data/market_factor_v2/shock_events_v2.csv
+          if git diff --cached --quiet; then echo 'Unchanged diagnostic results'; exit 0; fi
+          git commit -m 'Record exploratory BTC ETH separate-factor diagnostic'
+          for i in 1 2 3 4 5; do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then exit 0; fi
+            sleep "$((i*2))"
+          done
+          echo 'Failed to save factor diagnostic results' >&2
+          exit 1
