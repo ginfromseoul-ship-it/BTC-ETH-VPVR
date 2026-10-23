@@ -1,0 +1,146 @@
+{
+  "generated_utc": "2026-10-23T04:19:14Z",
+  "status": "ready",
+  "schema_version": 1,
+  "sources": "data/market_archive UTC-day gzip JSON, BTC/ETH",
+  "database_export": "GitHub Actions artifact (temporary download); regenerate from durable daily sources",
+  "availability_guard_seconds": 300,
+  "methodology": {
+    "primary_key": "instrument symbol, series name, UTC bucket start t",
+    "core_completeness": "all known 5m spot/futures and 15m OI UTC buckets inside each observed span",
+    "research_frame": "only matched BTC/ETH spot + futures 5m bars; OI/liq/funding from previously closed buckets with 5m guard, missing=>NULL",
+    "spot_delta": "buy_quote_usdt minus sell_quote_usdt, units USDT",
+    "futures_delta": "buy_native minus sell_native, units underlying BTC/ETH",
+    "oi_value": "raw native OI close; not USD notional",
+    "liquidation": "Coinalyze hourly reported liquidation USD. 15m liquidation events can be sparse; no absent bin treated as zero.",
+    "funding": "Coinalyze hourly provider funding rate OHLC, not guaranteed actual settled funding payment; raw units",
+    "backtest_limit": "Conservative publication guard is ASSUMED, not measured. Vendor historical revisions and publication delays can produce lookahead bias; validate against real-time captured snapshots before live strategy use."
+  },
+  "input_files": 6,
+  "source_sha256": "bae35b41a8a0c234c3f1e849b4983a638b3bef7d444bf2c6b7c3699674dcd893",
+  "coverage": {
+    "BTC": {
+      "spot_5m": {
+        "observed": 579,
+        "expected_in_observed_span": 579,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0,
+        "first_utc": "2026-10-21T03:45:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      },
+      "futures_5m": {
+        "observed": 579,
+        "expected_in_observed_span": 579,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0,
+        "first_utc": "2026-10-21T03:45:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      },
+      "oi_15m": {
+        "observed": 193,
+        "expected_in_observed_span": 193,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0,
+        "first_utc": "2026-10-21T03:45:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      },
+      "liquidations_15m": {
+        "observed": 168,
+        "expected_in_observed_span": 190,
+        "missing_in_span": 22,
+        "coverage_pct": 88.421,
+        "first_utc": "2026-10-21T04:30:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      },
+      "liquidations_1h": {
+        "observed": 48,
+        "expected_in_observed_span": 48,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0,
+        "first_utc": "2026-10-21T04:00:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      },
+      "funding_1h": {
+        "observed": 48,
+        "expected_in_observed_span": 48,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0,
+        "first_utc": "2026-10-21T04:00:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      }
+    },
+    "ETH": {
+      "spot_5m": {
+        "observed": 579,
+        "expected_in_observed_span": 579,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0,
+        "first_utc": "2026-10-21T03:45:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      },
+      "futures_5m": {
+        "observed": 579,
+        "expected_in_observed_span": 579,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0,
+        "first_utc": "2026-10-21T03:45:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      },
+      "oi_15m": {
+        "observed": 193,
+        "expected_in_observed_span": 193,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0,
+        "first_utc": "2026-10-21T03:45:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      },
+      "liquidations_15m": {
+        "observed": 176,
+        "expected_in_observed_span": 193,
+        "missing_in_span": 17,
+        "coverage_pct": 91.192,
+        "first_utc": "2026-10-21T03:45:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      },
+      "liquidations_1h": {
+        "observed": 48,
+        "expected_in_observed_span": 48,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0,
+        "first_utc": "2026-10-21T04:00:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      },
+      "funding_1h": {
+        "observed": 48,
+        "expected_in_observed_span": 48,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0,
+        "first_utc": "2026-10-21T04:00:00Z",
+        "last_end_utc": "2026-10-23T04:00:00Z"
+      }
+    }
+  },
+  "table_counts": {
+    "BTC": {
+      "spot_5m": 579,
+      "futures_5m": 579,
+      "oi_15m": 193,
+      "liquidations_15m": 168,
+      "liquidations_1h": 48,
+      "funding_1h": 48,
+      "research_5m": 579
+    },
+    "ETH": {
+      "spot_5m": 579,
+      "futures_5m": 579,
+      "oi_15m": 193,
+      "liquidations_15m": 176,
+      "liquidations_1h": 48,
+      "funding_1h": 48,
+      "research_5m": 579
+    }
+  },
+  "sqlite_bytes": 569344,
+  "sqlite_sha256": "be70f772d770f0b17c9e1dd493504c5eaa2a6d2351d957212d57ac4adc301fd4",
+  "core_gaps": []
+}
