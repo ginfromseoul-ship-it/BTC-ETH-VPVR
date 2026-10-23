@@ -1,0 +1,427 @@
+name: BTC ETH Historic OI Funding Import
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'pilot tests June 2026 OI time shift and Sep funding. Then use 1/3/6 months.'
+        required: true
+        type: choice
+        default: pilot
+        options:
+          - pilot
+          - 1_month
+          - 3_months
+          - 6_months
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-eth-historical-derivatives-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      SCOPE: ${{ inputs.scope || 'pilot' }}
+    steps:
+      - name: Download existing BTC ETH archives
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Prepare Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Import checksum-verified metrics and actual funding settlements
+        id: import_data
+        continue-on-error: true
+        shell: bash
+        run: |
+          cat > /tmp/historical_derivatives_import.py <<'PY_DERIVATIVE_IMPORT'
+          #!/usr/bin/env python3
+          """Binance Vision OI 5m / funding settlements; evidence-preserving historical import.
+          
+          Does not overwrite Coinalyze OI/funding series. 2026-06-25 UTC UM metrics create_time
+          changed from end-label to start-label, per binance-public-data issue #491.
+          """
+          import csv
+          import gzip
+          import hashlib
+          import io
+          import json
+          import math
+          import os
+          import re
+          import statistics
+          import sys
+          import time
+          import zipfile
+          from collections import defaultdict
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          from datetime import datetime, timezone, date, timedelta
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          
+          UTC=timezone.utc
+          SYMS=('BTC','ETH')
+          ROOT=Path('data/market_archive')
+          REPORT=Path('data/historical_derivatives_report.json')
+          BASE='https://data.binance.vision/data/futures/um'
+          CUTOFF=date(2026,6,25)
+          SERIES=('binance_oi_5m','binance_funding_settlements')
+          DATE_FORMAT='%Y-%m-%dT%H:%M:%SZ'
+          
+          
+          def stamp(t):return datetime.fromtimestamp(t,UTC).strftime(DATE_FORMAT)
+          def day_start(d):return int(datetime.combine(d,datetime.min.time(),UTC).timestamp())
+          def parse_time(value):
+              s=str(value).strip()
+              if re.fullmatch(r'\d{10,16}',s):
+                  n=int(s);return n//1_000_000 if n>=10**15 else n//1000 if n>=10**12 else n
+              s=s.replace('Z','+00:00')
+              try:
+                  dt=datetime.fromisoformat(s)
+              except ValueError:
+                  raise ValueError('bad timestamp '+s[:35])
+              if dt.tzinfo is None:dt=dt.replace(tzinfo=UTC)
+              return int(dt.astimezone(UTC).timestamp())
+          
+          
+          def get(url,limit=6_000_000):
+              error=None
+              for attempt in range(3):
+                  try:
+                      with urlopen(Request(url,headers={'User-Agent':'BTCETH-Research-Importer/1.0'}),timeout=55) as response:
+                          b=response.read(limit+1)
+                      if len(b)>limit:raise ValueError('archive too large')
+                      return b
+                  except Exception as ex:
+                      error=ex
+                      if attempt<2:time.sleep(1+attempt*2)
+              raise RuntimeError(f'download error {url}: {type(error).__name__} {str(error)[:120]}')
+          
+          
+          def verified_csv(url):
+              zip_bytes=get(url)
+              sha_text=get(url+'.CHECKSUM',limit=1500).decode('utf-8','replace')
+              m=re.search(r'\b[0-9a-fA-F]{64}\b',sha_text)
+              if not m:raise ValueError('invalid checksum file '+url)
+              sha=hashlib.sha256(zip_bytes).hexdigest()
+              if sha!=m.group(0).lower():raise ValueError('SHA256 mismatch '+url)
+              if zip_bytes[:2]!=b'PK':raise ValueError('ZIP signature missing '+url)
+              with zipfile.ZipFile(io.BytesIO(zip_bytes)) as f:
+                  names=[n for n in f.namelist() if n.lower().endswith('.csv') and '..' not in n]
+                  if len(names)!=1:raise ValueError('ZIP must contain exactly one CSV '+url)
+                  with f.open(names[0]) as g:
+                      text=io.TextIOWrapper(g,encoding='utf-8-sig',newline='')
+                      reader=csv.DictReader(text)
+                      if reader.fieldnames is None:raise ValueError('no header '+url)
+                      reader.fieldnames=[n.strip().lower() for n in reader.fieldnames]
+                      return list(reader),sha
+          
+          
+          def floating(value,name,nonnegative=False):
+              x=float(value)
+              if not math.isfinite(x) or (nonnegative and x<0):raise ValueError('bad '+name)
+              return x
+          
+          
+          def taker_ratio_alignment(rows,symbol,day):
+              """Compare metrics 5m taker ratios with exchange futures klines.
+
+              The ratio is a flow measurement for one completed 5m interval. The
+              corresponding kline is indexed by its START, while OI is indexed
+              by its actual observation END. This check distinguishes start-
+              from end-labeled archives without trusting the file date alone.
+              """
+              cached={}
+              def actual_ratio(bucket):
+                  d=datetime.fromtimestamp(bucket,UTC).strftime('%Y-%m-%d')
+                  if d not in cached:
+                      try:
+                          doc,_=existing_doc(d,symbol)
+                      except ValueError as ex:
+                          # At the first stored UTC date there may be no prior-day
+                          # 5m candle to test the alternative timestamp hypothesis.
+                          # Do not invent the cross-boundary observation.
+                          if 'existing 5m historical archive missing:' not in str(ex):raise
+                          cached[d]={}
+                      else:
+                          cached[d]={r['t']:r for r in doc['series']['futures_5m']}
+                  row=cached[d].get(bucket)
+                  if row is None:return None
+                  b=float(row['buy_native']);v=float(row['sell_native'])
+                  return b/v if b>0 and v>0 else None
+              scores={}
+              for mode in ('start','end'):
+                  errors=[]
+                  for row in rows:
+                      t=parse_time(row['create_time'])
+                      reference=actual_ratio(t if mode=='start' else t-300)
+                      if reference is None:continue
+                      observed=floating(row['sum_taker_long_short_vol_ratio'],'taker_ratio',True)
+                      if observed<=0:continue
+                      errors.append(abs(math.log(observed/reference)))
+                  scores[mode]={'samples':len(errors),'median_absolute_log_error':round(statistics.median(errors),7) if errors else None}
+              return scores
+
+          def metrics_parse(rows,symbol,day):
+              """Normalize vendor labels by observed pattern, audit anomalies against trades."""
+              first=day_start(day)
+              start_labels=set(range(first,first+86400,300))
+              end_labels=set(range(first+300,first+86400+300,300))
+              labels=[parse_time(r['create_time']) for r in rows]
+              actual=set(labels)
+              if len(rows)!=288 or len(actual)!=288:
+                  raise ValueError(f'{day} {symbol} metrics rows={len(rows)} unique={len(actual)} expected=288')
+              if actual==start_labels:mode='start'
+              elif actual==end_labels:mode='end'
+              else:
+                  raise ValueError(f'{day} {symbol} irregular 5m label pattern: '
+                                   f'first={stamp(min(actual))},last={stamp(max(actual))}, '
+                                   f'outside_start={len(actual-start_labels)},outside_end={len(actual-end_labels)}')
+              expected='start' if day>=CUTOFF else 'end'
+              score=None
+              if mode!=expected or day in (date(2026,6,24),date(2026,6,25)):
+                  score=taker_ratio_alignment(rows,symbol,day)
+                  right=score[mode];other=score['end' if mode=='start' else 'start']
+                  err=right['median_absolute_log_error'];other_err=other['median_absolute_log_error']
+                  if (right['samples']<200 or err is None or err>0.07 or
+                       other_err is None or err*2>other_err):
+                      raise ValueError(f'{day} {symbol} timestamp label mode={mode} '
+                                       f'cannot be proven by futures taker ratios: {score}')
+              out={}
+              bad_oi=[]
+              for row,label in zip(rows,labels):
+                  if row.get('symbol') and str(row['symbol']).strip()!=symbol+'USDT':
+                      raise ValueError('symbol mismatch')
+                  # A zero or invalid reported OI is a MISSING observation,
+                  # not evidence that every futures contract closed.
+                  native=floating(row['sum_open_interest'],'sum_open_interest',True)
+                  notional=floating(row['sum_open_interest_value'],'sum_open_interest_value',True)
+                  observed_at=label+300 if mode=='start' else label
+                  if native<=0 or notional<=0:
+                      bad_oi.append(stamp(observed_at))
+                      continue
+                  if observed_at in out:raise ValueError('duplicate normalized OI timestamp')
+                  out[observed_at]={
+                      't':observed_at,'native':native,'notional_usdt':notional,
+                      'raw_label_t':label,'label_convention':'start_plus_5m' if mode=='start' else 'end_at_T'}
+              audit={'label_mode':mode,'date_policy_mode':expected,'exception':mode!=expected,
+                     'observations':len(out),'label_first_utc':stamp(min(actual)),
+                     'label_last_utc':stamp(max(actual)),'taker_ratio_audit':score,
+                     'invalid_oi_observation_count':len(bad_oi),
+                     'invalid_oi_times_utc':bad_oi}
+              if bad_oi:
+                  print('SOURCE_QUALITY_GAP',symbol,day,
+                        'missing_OI_observations',len(bad_oi),flush=True)
+              if mode!=expected:
+                  print('AUDITED DATE EXCEPTION',symbol,day,mode,'rather than',expected,score,flush=True)
+              return out,audit
+
+
+          def funding_parse(rows,symbol,month):
+              a=day_start(month);b=day_start(next_month(month))
+              out={}
+              for row in rows:
+                  keys=row.keys()
+                  time_key=next((k for k in ('calc_time','fundingtime','funding_time') if k in keys),None)
+                  rate_key=next((k for k in ('last_funding_rate','fundingrate','funding_rate') if k in keys),None)
+                  if time_key is None or rate_key is None:raise ValueError('funding columns not recognized '+str(sorted(keys)))
+                  t=parse_time(row[time_key])
+                  if not a<=t<b:raise ValueError('funding settlement timestamp outside month')
+                  rate=floating(row[rate_key],'funding rate')
+                  if abs(rate)>1:raise ValueError('funding rate units out of plausible decimal range')
+                  interval_raw=row.get('funding_interval_hours')
+                  h=floating(interval_raw,'funding_interval_hours',True) if interval_raw not in (None,'') else None
+                  v={'t':t,'rate_decimal':rate,'interval_hours':h}
+                  if t in out and out[t]!=v:raise ValueError('conflicting duplicate funding settlement')
+                  out[t]=v
+              if not out:raise ValueError('empty funding rates')
+              return out
+          
+          
+          def month_before(d):return date(d.year-1,12,1) if d.month==1 else date(d.year,d.month-1,1)
+          def next_month(d):return date(d.year+1,1,1) if d.month==12 else date(d.year,d.month+1,1)
+          
+          def existing_doc(day,symbol):
+              path=ROOT/day/(symbol+'.json.gz')
+              if not path.exists():raise ValueError('existing 5m historical archive missing: '+str(path))
+              d=json.loads(gzip.decompress(path.read_bytes()))
+              if d.get('schema_version')!=1 or d.get('symbol')!=symbol or d.get('utc_day')!=day:
+                  raise ValueError('archive schema mismatch '+str(path))
+              if not isinstance(d.get('series'),dict):raise ValueError('archive lacks series')
+              return d,path
+          
+          
+          def merge_records(symbol,series,points):
+              daily=defaultdict(dict)
+              for t,v in points.items():daily[stamp(t)[:10]][t]=v
+              changed=added=duplicates=conflicts=0
+              for day,records in sorted(daily.items()):
+                  d,path=existing_doc(day,symbol)
+                  current=d['series'].get(series,[])
+                  old={x['t']:x for x in current}
+                  if len(old)!=len(current):raise ValueError('duplicate timestamps in existing series '+str(path))
+                  for t,row in sorted(records.items()):
+                      if t not in old:old[t]=row;added+=1
+                      elif old[t]==row:duplicates+=1
+                      else:
+                          # Fail, never silently rewrite previously archived market observations.
+                          conflicts+=1
+                  if conflicts:raise ValueError(f'{symbol} {series} source disagreement: {conflicts} existing rows; no overwrite')
+                  if len(old)==len(current):continue
+                  d['series'][series]=[old[t] for t in sorted(old)]
+                  raw=(json.dumps(d,sort_keys=True,separators=(',',':'),allow_nan=False)+'\n').encode()
+                  payload=gzip.compress(raw,compresslevel=7,mtime=0)
+                  tmp=path.with_name(path.name+'.partial')
+                  tmp.write_bytes(payload);tmp.replace(path)
+                  changed+=1
+              return {'new_points':added,'exact_duplicate_points':duplicates,'changed_day_files':changed,'conflicts':conflicts}
+          
+          
+          def daily_oi(symbol,day):
+              pair=symbol+'USDT'
+              url=f'{BASE}/daily/metrics/{pair}/{pair}-metrics-{day.isoformat()}.zip'
+              rows,sha=verified_csv(url)
+              points,audit=metrics_parse(rows,symbol,day)
+              return ('oi',symbol,day.isoformat(),points,url,sha,audit)
+          
+          def monthly_funding(symbol,month):
+              pair=symbol+'USDT';label=month.strftime('%Y-%m')
+              url=f'{BASE}/monthly/fundingRate/{pair}/{pair}-fundingRate-{label}.zip'
+              rows,sha=verified_csv(url)
+              return ('funding',symbol,label,funding_parse(rows,symbol,month),url,sha,None)
+          
+          def tasks_for(scope,now):
+              if scope=='pilot':
+                  days=[date(2026,6,24),date(2026,6,25),date(2026,6,26),date(2026,10,20)]
+                  months=[date(2026,9,1)]
+              else:
+                  n={'1_month':1,'3_months':3,'6_months':6}.get(scope)
+                  if n is None:raise ValueError('scope must be pilot/1_month/3_months/6_months')
+                  this_month=date(now.year,now.month,1)
+                  first=this_month
+                  for _ in range(n):first=month_before(first)
+                  days=[];d=first
+                  while d<now.date():
+                      days.append(d);d+=timedelta(days=1)
+                  months=[];m=first
+                  while m<this_month:months.append(m);m=next_month(m)
+              return [('oi',s,d) for d in days for s in SYMS]+[('funding',s,m) for m in months for s in SYMS]
+          
+          def main():
+              scope=os.environ.get('SCOPE','pilot')
+              now=datetime.now(UTC)
+              tasks=tasks_for(scope,now)
+              report={'generated_utc':stamp(int(now.timestamp())),'status':'running','scope':scope,
+                      'total_source_zips':len(tasks),'completed_source_zips':0,'records_new':0,
+                      'new_archive_files_modified':0,'checksum_verified':0,
+                      'oi_label_transition':'Data driven label-shape detection, taker-ratio audit on 2026-06-24/25 and any other date-policy exceptions',
+                      'time_semantics':'binance_oi_5m.t is normalized OI observation time, never raw after-shift label',
+                      'funding_semantics':'binance_funding_settlements.t is actual settlement event timestamp; rate_decimal raw decimal',
+                      'note':'Added independent source series only; current SQLite market warehouse does not yet consume them.',
+                      'sources':[],'failures':[], 'pending_sources':[],
+                      'source_quality_gaps':[],
+                      'completeness_note':'Warnings and pending dates are NOT fully observed OI. Never backfill them with zero.'}
+              def attempt(task):
+                  kind,s,d=task
+                  return daily_oi(s,d) if kind=='oi' else monthly_funding(s,d)
+              with ThreadPoolExecutor(max_workers=4) as pool:
+                  jobs={pool.submit(attempt,t):t for t in tasks}
+                  for completed in as_completed(jobs):
+                      task=jobs[completed]
+                      try:
+                          typ,s,label,data,url,sha,audit=completed.result()
+                          stats=merge_records(s,'binance_oi_5m' if typ=='oi' else 'binance_funding_settlements',data)
+                          report['completed_source_zips']+=1;report['checksum_verified']+=1
+                          report['records_new']+=stats['new_points'];report['new_archive_files_modified']+=stats['changed_day_files']
+                          report['sources'].append({'kind':typ,'symbol':s,'period':label,'sha256':sha,
+                                                    'records':len(data),'timestamp_audit':audit,**stats})
+                          if typ=='oi' and audit and audit.get('invalid_oi_observation_count',0):
+                              report['source_quality_gaps'].append({
+                                  'symbol':s,'period':label,'kind':'oi',
+                                  'invalid_count':audit['invalid_oi_observation_count'],
+                                  'missing_times_utc':audit['invalid_oi_times_utc'],
+                                  'action':'Excluded invalid OI observations; do not interpolate or treat as zero.'})
+                          print('OK',typ,s,label,'+',stats['new_points'],flush=True)
+                      except Exception as ex:
+                          kind,s,period=task
+                          message=str(ex)
+                          if (kind=='oi' and isinstance(period,date)
+                                  and period>=now.date()-timedelta(days=5)
+                                  and 'HTTP Error 404' in message):
+                              # Binance Vision can publish completed daily ZIPs
+                              # later than the UTC day. This is pending, not zero.
+                              report['pending_sources'].append({
+                                  'symbol':s,'period':period.isoformat(),
+                                  'reason':'Not yet published (HTTP 404), retry in next scheduled import'})
+                              print('PENDING_SOURCE',kind,s,period,flush=True)
+                          else:
+                              report['failures'].append({'source':str(task),'error':type(ex).__name__+': '+message[:230]})
+                              print('FAIL',task,message[:200],file=sys.stderr,flush=True)
+              report['sources'].sort(key=lambda x:(x['kind'],x['period'],x['symbol']))
+              report['status']=('partial' if report['failures'] else
+                                'complete_with_gaps' if (report['pending_sources'] or report['source_quality_gaps'])
+                                else 'complete')
+              REPORT.parent.mkdir(parents=True,exist_ok=True)
+              REPORT.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              print('RESULT',report['status'],report['completed_source_zips'],'of',len(tasks),
+                    'records_new',report['records_new'],'errors',len(report['failures']),
+                    'pending',len(report['pending_sources']),
+                    'quality_gaps',len(report['source_quality_gaps']))
+              return 0 if not report['failures'] else 1
+          
+          if __name__=='__main__':sys.exit(main())
+          PY_DERIVATIVE_IMPORT
+          python /tmp/historical_derivatives_import.py
+      - name: Save evidence and source observations
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git add -A data/market_archive data/historical_derivatives_report.json
+            if git diff --cached --quiet; then
+              echo 'No new historical derivatives rows'
+              exit 0
+            fi
+            git commit -m 'Import timestamp-audited BTC ETH historical OI and funding'
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              echo 'OI/funding historical archive saved successfully'
+              exit 0
+            fi
+            git rebase --abort || true
+            git fetch origin main
+            git reset --hard origin/main
+            echo "Refreshing archive after concurrent writes (retry $attempt)" >&2
+            python /tmp/historical_derivatives_import.py || true
+            sleep $((attempt * 2))
+          done
+          echo 'Unable to persist historical derivatives import after retries' >&2
+          exit 1
+      - name: Publish summary in job
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY_SUMMARY'
+          import json, pathlib
+          p=pathlib.Path('data/historical_derivatives_report.json')
+          if p.exists():
+              d=json.loads(p.read_text())
+              msg=f"### OI/funding archive audit\n\n- Status: {d['status']}\n- Source ZIPs: {d['completed_source_zips']}/{d['total_source_zips']}\n- New records: {d['records_new']}\n- Failures: {len(d['failures'])}\n- Pending publication: {len(d.get('pending_sources',[]))}\n- Quality gaps: {len(d.get('source_quality_gaps',[]))}\n- SQLite integration: pending separate validation\n"
+              with open(__import__('os').environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(msg)
+              print(msg)
+          PY_SUMMARY
+      - name: Fail on data gaps or source errors
+        if: steps.import_data.outcome == 'failure'
+        run: |
+          echo 'Inspect data/historical_derivatives_report.json to see exact failed dates and sources' >&2
+          exit 1
