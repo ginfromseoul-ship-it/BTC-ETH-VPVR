@@ -1,4 +1,5 @@
 name: BTC ETH Historic OI Funding Import
+# OI_FIX_VERSION: 2026-10-23-v3
 
 on:
   workflow_dispatch:
@@ -142,8 +143,16 @@ jobs:
               def actual_ratio(bucket):
                   d=datetime.fromtimestamp(bucket,UTC).strftime('%Y-%m-%d')
                   if d not in cached:
-                      doc,_=existing_doc(d,symbol)
-                      cached[d]={r['t']:r for r in doc['series']['futures_5m']}
+                      try:
+                          doc,_=existing_doc(d,symbol)
+                      except ValueError as ex:
+                          # At the first stored UTC date there may be no prior-day
+                          # 5m candle to test the alternative timestamp hypothesis.
+                          # Do not invent the cross-boundary observation.
+                          if 'existing 5m historical archive missing:' not in str(ex):raise
+                          cached[d]={}
+                      else:
+                          cached[d]={r['t']:r for r in doc['series']['futures_5m']}
                   row=cached[d].get(bucket)
                   if row is None:return None
                   b=float(row['buy_native']);v=float(row['sell_native'])
@@ -187,20 +196,30 @@ jobs:
                       raise ValueError(f'{day} {symbol} timestamp label mode={mode} '
                                        f'cannot be proven by futures taker ratios: {score}')
               out={}
+              bad_oi=[]
               for row,label in zip(rows,labels):
                   if row.get('symbol') and str(row['symbol']).strip()!=symbol+'USDT':
                       raise ValueError('symbol mismatch')
-                  native=floating(row['sum_open_interest'],'sum_open_interest',True)
-                  notional=floating(row['sum_open_interest_value'],'sum_open_interest_value',True)
-                  if native<=0 or notional<=0:raise ValueError('nonpositive OI')
+                  # A nonpositive reported OI is a MISSING observation,
+                  # not evidence that every futures contract closed.
+                  native=floating(row['sum_open_interest'],'sum_open_interest')
+                  notional=floating(row['sum_open_interest_value'],'sum_open_interest_value')
                   observed_at=label+300 if mode=='start' else label
+                  if native<=0 or notional<=0:
+                      bad_oi.append(stamp(observed_at))
+                      continue
                   if observed_at in out:raise ValueError('duplicate normalized OI timestamp')
                   out[observed_at]={
                       't':observed_at,'native':native,'notional_usdt':notional,
                       'raw_label_t':label,'label_convention':'start_plus_5m' if mode=='start' else 'end_at_T'}
               audit={'label_mode':mode,'date_policy_mode':expected,'exception':mode!=expected,
                      'observations':len(out),'label_first_utc':stamp(min(actual)),
-                     'label_last_utc':stamp(max(actual)),'taker_ratio_audit':score}
+                     'label_last_utc':stamp(max(actual)),'taker_ratio_audit':score,
+                     'invalid_oi_observation_count':len(bad_oi),
+                     'invalid_oi_times_utc':bad_oi}
+              if bad_oi:
+                  print('SOURCE_QUALITY_GAP',symbol,day,
+                        'missing_OI_observations',len(bad_oi),flush=True)
               if mode!=expected:
                   print('AUDITED DATE EXCEPTION',symbol,day,mode,'rather than',expected,score,flush=True)
               return out,audit
@@ -307,7 +326,9 @@ jobs:
                       'time_semantics':'binance_oi_5m.t is normalized OI observation time, never raw after-shift label',
                       'funding_semantics':'binance_funding_settlements.t is actual settlement event timestamp; rate_decimal raw decimal',
                       'note':'Added independent source series only; current SQLite market warehouse does not yet consume them.',
-                      'sources':[],'failures':[]}
+                      'sources':[],'failures':[], 'pending_sources':[],
+                      'source_quality_gaps':[],
+                      'completeness_note':'Warnings and pending dates are NOT fully observed OI. Never backfill them with zero.'}
               def attempt(task):
                   kind,s,d=task
                   return daily_oi(s,d) if kind=='oi' else monthly_funding(s,d)
@@ -322,15 +343,38 @@ jobs:
                           report['records_new']+=stats['new_points'];report['new_archive_files_modified']+=stats['changed_day_files']
                           report['sources'].append({'kind':typ,'symbol':s,'period':label,'sha256':sha,
                                                     'records':len(data),'timestamp_audit':audit,**stats})
+                          if typ=='oi' and audit and audit.get('invalid_oi_observation_count',0):
+                              report['source_quality_gaps'].append({
+                                  'symbol':s,'period':label,'kind':'oi',
+                                  'invalid_count':audit['invalid_oi_observation_count'],
+                                  'missing_times_utc':audit['invalid_oi_times_utc'],
+                                  'action':'Excluded invalid OI observations; do not interpolate or treat as zero.'})
                           print('OK',typ,s,label,'+',stats['new_points'],flush=True)
                       except Exception as ex:
-                          report['failures'].append({'source':str(task),'error':type(ex).__name__+': '+str(ex)[:230]})
-                          print('FAIL',task,str(ex)[:200],file=sys.stderr,flush=True)
+                          kind,s,period=task
+                          message=str(ex)
+                          if (kind=='oi' and isinstance(period,date)
+                                  and period>=now.date()-timedelta(days=5)
+                                  and 'HTTP Error 404' in message):
+                              # Binance Vision can publish completed daily ZIPs
+                              # later than the UTC day. This is pending, not zero.
+                              report['pending_sources'].append({
+                                  'symbol':s,'period':period.isoformat(),
+                                  'reason':'Not yet published (HTTP 404), retry in next scheduled import'})
+                              print('PENDING_SOURCE',kind,s,period,flush=True)
+                          else:
+                              report['failures'].append({'source':str(task),'error':type(ex).__name__+': '+message[:230]})
+                              print('FAIL',task,message[:200],file=sys.stderr,flush=True)
               report['sources'].sort(key=lambda x:(x['kind'],x['period'],x['symbol']))
-              report['status']='complete' if not report['failures'] else 'partial'
+              report['status']=('partial' if report['failures'] else
+                                'complete_with_gaps' if (report['pending_sources'] or report['source_quality_gaps'])
+                                else 'complete')
               REPORT.parent.mkdir(parents=True,exist_ok=True)
               REPORT.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-              print('RESULT',report['status'],report['completed_source_zips'],'of',len(tasks),'records_new',report['records_new'],'errors',len(report['failures']))
+              print('RESULT',report['status'],report['completed_source_zips'],'of',len(tasks),
+                    'records_new',report['records_new'],'errors',len(report['failures']),
+                    'pending',len(report['pending_sources']),
+                    'quality_gaps',len(report['source_quality_gaps']))
               return 0 if not report['failures'] else 1
           
           if __name__=='__main__':sys.exit(main())
@@ -373,7 +417,7 @@ jobs:
           p=pathlib.Path('data/historical_derivatives_report.json')
           if p.exists():
               d=json.loads(p.read_text())
-              msg=f"### OI/funding archive audit\n\n- Status: {d['status']}\n- Source ZIPs: {d['completed_source_zips']}/{d['total_source_zips']}\n- New records: {d['records_new']}\n- Failures: {len(d['failures'])}\n- SQLite integration: pending separate validation\n"
+              msg=f"### OI/funding archive audit\n\n- Status: {d['status']}\n- Source ZIPs: {d['completed_source_zips']}/{d['total_source_zips']}\n- New records: {d['records_new']}\n- Failures: {len(d['failures'])}\n- Pending publication: {len(d.get('pending_sources',[]))}\n- Quality gaps: {len(d.get('source_quality_gaps',[]))}\n- SQLite integration: pending separate validation\n"
               with open(__import__('os').environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(msg)
               print(msg)
           PY_SUMMARY
