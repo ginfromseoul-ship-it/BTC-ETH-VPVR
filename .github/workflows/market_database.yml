@@ -1,0 +1,337 @@
+name: BTC ETH Long-Term Research Database
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 0 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-eth-longterm-database
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download archived market observations
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build SQLite, validate, and create research-ready time series
+        id: create_database
+        continue-on-error: true
+        shell: bash
+        run: |
+          cat > /tmp/build_market_db.py <<'PY_DATABASE'
+          #!/usr/bin/env python3
+          """Build reproducible historical BTC/ETH market-structure SQLite from daily archives.
+
+          Primary durable data: data/market_archive/YYYY-MM-DD/{BTC,ETH}.json.gz.
+          SQLite is generated on demand and published as an expiring GH Actions artifact.
+          Only fully closed bars plus conservative 5-minute availability guard appear in features.
+          """
+          import bisect
+          import gzip
+          import hashlib
+          import json
+          import math
+          import os
+          import re
+          import sqlite3
+          import sys
+          from collections import Counter, defaultdict
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          ARCHIVE_ROOT = Path('data/market_archive')
+          WAREHOUSE_ROOT = Path('data/warehouse')
+          DB_PATH = WAREHOUSE_ROOT / 'btc_eth_market.sqlite'
+          MANIFEST_PATH = Path('data/warehouse_manifest.json')
+          SYMBOLS = ('BTC','ETH')
+          WIDTHS = {'spot_5m':300,'futures_5m':300,'oi_15m':900,
+                    'liquidations_15m':900,'liquidations_1h':3600,'funding_1h':3600}
+          TABLE_FIELDS = {
+           'spot_5m':('o','h','l','c','v_base','v_quote_usdt','buy_base','buy_quote_usdt','sell_quote_usdt'),
+           'futures_5m':('o','h','l','c','v_native','buy_native','sell_native'),
+           'oi_15m':('o','h','l','c'),
+           'liquidations_15m':('long_usd','short_usd'),
+           'liquidations_1h':('long_usd','short_usd'),
+           'funding_1h':('o','h','l','c'),
+          }
+          CORE=('spot_5m','futures_5m','oi_15m')
+          MAX_LAG=3600*2
+          GUARD=300  # minimum assumed publication delay after the recorded vendor bucket ends
+
+
+          def utc(ts):
+              return datetime.fromtimestamp(ts,timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+          def fail(msg):
+              raise ValueError(msg)
+
+
+          def validate_row(series,row,symbol,day):
+              if not isinstance(row,dict):fail('not an object')
+              t=row.get('t')
+              if type(t) is not int or t<0 or t%WIDTHS[series]:fail('invalid timestamp or alignment')
+              if datetime.fromtimestamp(t,timezone.utc).strftime('%Y-%m-%d') != day:fail('row timestamp outside named UTC day')
+              result={'t':t}
+              for field in TABLE_FIELDS[series]:
+                  value=row.get(field)
+                  if not isinstance(value,(int,float)) or isinstance(value,bool) or not math.isfinite(value):
+                      fail('missing/invalid '+field)
+                  result[field]=float(value)
+              if series=='spot_5m':
+                  if any(result[k]<0 for k in ('v_base','v_quote_usdt','buy_base','buy_quote_usdt','sell_quote_usdt')):
+                      fail('negative spot quantities')
+                  if result['buy_base']>result['v_base']*(1+1e-5):fail('buy > total volume')
+                  if abs(result['sell_quote_usdt'] - (result['v_quote_usdt']-result['buy_quote_usdt'])) > max(.01, result['v_quote_usdt']*1e-6):
+                      fail('spot quote volume mismatch')
+              elif series=='futures_5m':
+                  if any(result[k]<0 for k in ('v_native','buy_native','sell_native')):fail('negative futures quantities')
+                  if abs(result['v_native'] - result['buy_native'] - result['sell_native'])>max(.00002,result['v_native']*1e-5):
+                      fail('futures volume mismatch')
+              elif series.startswith('liquidations_'):
+                  if result['long_usd']<0 or result['short_usd']<0:fail('negative liquidation')
+              elif series=='oi_15m':
+                  if any(result[k]<0 for k in ('o','h','l','c')):fail('negative open interest')
+              if series in ('spot_5m','futures_5m'):
+                  if result['h'] < max(result['o'],result['c'],result['l']) or result['l'] > min(result['o'],result['c'],result['h']):
+                      fail('malformed OHLC')
+              return result
+
+
+          def read_archives():
+              if not ARCHIVE_ROOT.is_dir():fail('missing historical source directory')
+              store={symbol:{name:{} for name in WIDTHS} for symbol in SYMBOLS}
+              digest=hashlib.sha256(); archives=[]; invalid=[]
+              paths=sorted(ARCHIVE_ROOT.glob('????-??-??/*.json.gz'))
+              if not paths:fail('no historical archives present')
+              for path in paths:
+                  day=path.parent.name; symbol=path.name.removesuffix('.json.gz')
+                  if not re.fullmatch(r'\d{4}-\d{2}-\d{2}',day) or symbol not in SYMBOLS:continue
+                  try:
+                      binary=path.read_bytes()
+                      doc=json.loads(gzip.decompress(binary))
+                      if doc.get('schema_version') != 1 or doc.get('symbol') != symbol or doc.get('utc_day') != day:
+                          fail('schema/header mismatch')
+                      series_data=doc.get('series')
+                      if not isinstance(series_data,dict):fail('missing series')
+                      for series in WIDTHS:
+                          items=series_data.get(series)
+                          if not isinstance(items,list):fail('missing '+series)
+                          for item in items:
+                              try:row=validate_row(series,item,symbol,day)
+                              except (ValueError,TypeError,OverflowError) as exc:
+                                  invalid.append(f'{path}:{series}: {str(exc)[:80]}')
+                                  continue
+                              prior=store[symbol][series].get(row['t'])
+                              if prior is not None and prior != row:
+                                  fail(f'conflicting duplicate symbol/series/timestamp: {symbol}/{series}/{row["t"]}')
+                              store[symbol][series][row['t']]=row
+                      digest.update(str(path.as_posix()).encode()+b'\0'+hashlib.sha256(binary).digest())
+                      archives.append({'path':str(path),'bytes':len(binary),'sha256':hashlib.sha256(binary).hexdigest()})
+                  except (OSError, ValueError, TypeError, KeyError, EOFError) as exc:
+                      invalid.append(f'{path}: {type(exc).__name__}: {str(exc)[:90]}')
+              if invalid:fail('invalid archive values: '+ '; '.join(invalid[:8]) + f' (total {len(invalid)})')
+              for sym in SYMBOLS:
+                  if any(not store[sym][s] for s in CORE):fail(f'{sym} missing core data')
+              return store,archives,digest.hexdigest()
+
+
+          def continuity(rows,width):
+              ticks=sorted(rows)
+              if not ticks:return {'observed':0,'expected_in_observed_span':0,'missing_in_span':None,'first_utc':None,'last_end_utc':None}
+              expected=(ticks[-1]-ticks[0])//width+1
+              miss=expected-len(ticks)
+              return {'observed':len(ticks),'expected_in_observed_span':expected,'missing_in_span':miss,
+                      'coverage_pct':round(100*len(ticks)/expected,3),
+                      'first_utc':utc(ticks[0]),'last_end_utc':utc(ticks[-1]+width)}
+
+
+          def create_database(store,build_time):
+              WAREHOUSE_ROOT.mkdir(parents=True,exist_ok=True)
+              if DB_PATH.exists():DB_PATH.unlink()
+              conn=sqlite3.connect(DB_PATH)
+              conn.execute('PRAGMA journal_mode=DELETE')
+              conn.execute('PRAGMA synchronous=FULL')
+              conn.execute('PRAGMA foreign_keys=ON')
+              conn.executescript('''
+                CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE spot_5m (symbol TEXT NOT NULL, t INTEGER NOT NULL, o REAL,h REAL,l REAL,c REAL,
+                   v_base REAL,v_quote_usdt REAL,buy_base REAL,buy_quote_usdt REAL,sell_quote_usdt REAL,
+                   PRIMARY KEY (symbol,t));
+                CREATE TABLE futures_5m (symbol TEXT NOT NULL, t INTEGER NOT NULL, o REAL,h REAL,l REAL,c REAL,
+                   v_native REAL,buy_native REAL,sell_native REAL, PRIMARY KEY(symbol,t));
+                CREATE TABLE oi_15m (symbol TEXT NOT NULL,t INTEGER NOT NULL,o REAL,h REAL,l REAL,c REAL,
+                   PRIMARY KEY(symbol,t));
+                CREATE TABLE liquidations_15m (symbol TEXT NOT NULL,t INTEGER NOT NULL,long_usd REAL,short_usd REAL,
+                   PRIMARY KEY(symbol,t));
+                CREATE TABLE liquidations_1h (symbol TEXT NOT NULL,t INTEGER NOT NULL,long_usd REAL,short_usd REAL,
+                   PRIMARY KEY(symbol,t));
+                CREATE TABLE funding_1h (symbol TEXT NOT NULL,t INTEGER NOT NULL,o REAL,h REAL,l REAL,c REAL,
+                   PRIMARY KEY(symbol,t));
+                CREATE TABLE research_5m (
+                  symbol TEXT NOT NULL, t INTEGER NOT NULL, end_t INTEGER NOT NULL,
+                  spot_open REAL NOT NULL, spot_close REAL NOT NULL, future_open REAL NOT NULL, future_close REAL NOT NULL,
+                  spot_taker_delta_quote_usdt REAL NOT NULL, futures_taker_delta_native REAL NOT NULL,
+                  oi_native REAL, oi_asof_end_t INTEGER, oi_lag_seconds INTEGER,
+                  last_hour_long_liquidations_usd REAL, last_hour_short_liquidations_usd REAL,
+                  liq_asof_end_t INTEGER, liq_lag_seconds INTEGER,
+                  funding_provider_rate_close REAL, funding_asof_end_t INTEGER, funding_lag_seconds INTEGER,
+                  PRIMARY KEY(symbol,t));
+                CREATE INDEX research_end_idx ON research_5m(symbol,end_t);
+              ''')
+              conn.execute('INSERT INTO metadata VALUES (?,?)',('schema_version','1'))
+              conn.execute('INSERT INTO metadata VALUES (?,?)',('built_utc',utc(build_time)))
+              conn.execute('INSERT INTO metadata VALUES (?,?)',('asof_policy',
+                           'reference interval must end >=300s before researched 5-minute candle close; no revisions captured; sparse liquidation=NULL'))
+              cursor=conn.cursor()
+              for symbol in SYMBOLS:
+                  for series in WIDTHS:
+                      fields=('symbol','t')+TABLE_FIELDS[series]
+                      sql=f'INSERT INTO {series} ('+','.join(fields)+') VALUES ('+','.join('?' for _ in fields)+')'
+                      data=[(symbol,r['t'])+tuple(r[field] for field in TABLE_FIELDS[series])
+                            for r in sorted(store[symbol][series].values(),key=lambda z:z['t'])]
+                      cursor.executemany(sql,data)
+                  future=store[symbol]['futures_5m']
+                  sources=[]
+                  for table in ('oi_15m','liquidations_1h','funding_1h'):
+                      source=store[symbol][table]
+                      keys=sorted(source)
+                      sources.append((source,keys,WIDTHS[table]))
+                  research=[]
+                  for t,spot in sorted(store[symbol]['spot_5m'].items()):
+                      fut=future.get(t)
+                      if fut is None:continue
+                      end=t+300
+                      ref=[]
+                      for source,keys,width in sources:
+                          idx=bisect.bisect_right(keys,end-width-GUARD)-1
+                          if idx<0:
+                              ref.append((None,None,None));continue
+                          ts=keys[idx];ref_end=ts+width;lag=end-ref_end
+                          if lag<GUARD or lag>MAX_LAG:
+                              ref.append((None,None,None))
+                          else:ref.append((source[ts],ref_end,lag))
+                      oi,li,fu=ref
+                      research.append((symbol,t,end,spot['o'],spot['c'],fut['o'],fut['c'],
+                            spot['buy_quote_usdt']-spot['sell_quote_usdt'],fut['buy_native']-fut['sell_native'],
+                            oi[0]['c'] if oi[0] else None,oi[1],oi[2],
+                            li[0]['long_usd'] if li[0] else None,li[0]['short_usd'] if li[0] else None,li[1],li[2],
+                            fu[0]['c'] if fu[0] else None,fu[1],fu[2]))
+                  cursor.executemany('INSERT INTO research_5m VALUES ('+','.join('?' for _ in range(19))+')',research)
+              conn.commit()
+              result=conn.execute('PRAGMA integrity_check').fetchone()[0]
+              if result!='ok':fail('sqlite integrity check failed: '+result)
+              issue=conn.execute('''SELECT COUNT(*) FROM research_5m WHERE
+                (oi_asof_end_t IS NOT NULL AND oi_asof_end_t+? > end_t) OR
+                (liq_asof_end_t IS NOT NULL AND liq_asof_end_t+? > end_t) OR
+                (funding_asof_end_t IS NOT NULL AND funding_asof_end_t+? > end_t)''',(GUARD,GUARD,GUARD)).fetchone()[0]
+              if issue:fail(f'point-in-time guard violation {issue}')
+              counts={s:{table:conn.execute(f'SELECT COUNT(*) FROM {table} WHERE symbol=?',(s,)).fetchone()[0]
+                         for table in list(WIDTHS)+['research_5m']} for s in SYMBOLS}
+              conn.close()
+              return counts
+
+
+          def main():
+              build_time=int(datetime.now(timezone.utc).timestamp())
+              manifest={'generated_utc':utc(build_time),'status':'unverified','schema_version':1,
+                 'sources':'data/market_archive UTC-day gzip JSON, BTC/ETH',
+                 'database_export':'GitHub Actions artifact (temporary download); regenerate from durable daily sources',
+                 'availability_guard_seconds':GUARD,
+                 'methodology':{
+                    'primary_key':'instrument symbol, series name, UTC bucket start t',
+                    'core_completeness':'all known 5m spot/futures and 15m OI UTC buckets inside each observed span',
+                    'research_frame':'only matched BTC/ETH spot + futures 5m bars; OI/liq/funding from previously closed buckets with 5m guard, missing=>NULL',
+                    'spot_delta':'buy_quote_usdt minus sell_quote_usdt, units USDT',
+                    'futures_delta':'buy_native minus sell_native, units underlying BTC/ETH',
+                    'oi_value':'raw native OI close; not USD notional',
+                    'liquidation':'Coinalyze hourly reported liquidation USD. 15m liquidation events can be sparse; no absent bin treated as zero.',
+                    'funding':'Coinalyze hourly provider funding rate OHLC, not guaranteed actual settled funding payment; raw units',
+                    'backtest_limit':'Conservative publication guard is ASSUMED, not measured. Vendor historical revisions and publication delays can produce lookahead bias; validate against real-time captured snapshots before live strategy use.'}}
+              try:
+                  store,files,source_hash=read_archives()
+                  manifest['input_files']=len(files)
+                  manifest['source_sha256']=source_hash
+                  manifest['coverage']={s:{name:continuity(store[s][name],WIDTHS[name]) for name in WIDTHS}
+                                        for s in SYMBOLS}
+                  manifest['table_counts']=create_database(store,build_time)
+                  manifest['sqlite_bytes']=DB_PATH.stat().st_size
+                  manifest['sqlite_sha256']=hashlib.sha256(DB_PATH.read_bytes()).hexdigest()
+                  problems=[]
+                  for s in SYMBOLS:
+                      for name in CORE:
+                          if manifest['coverage'][s][name]['missing_in_span']:
+                              problems.append(f'{s} {name} gap {manifest["coverage"][s][name]["missing_in_span"]}')
+                  manifest['core_gaps']=problems
+                  manifest['status']='ready' if not problems else 'incomplete_core_history'
+              except (ValueError,KeyError,OSError,sqlite3.Error,EOFError,OverflowError) as exc:
+                  manifest['status']='build_failed';manifest['error']=f'{type(exc).__name__}: {str(exc)[:650]}'
+              MANIFEST_PATH.parent.mkdir(parents=True,exist_ok=True)
+              MANIFEST_PATH.write_text(json.dumps(manifest,ensure_ascii=False,indent=2,allow_nan=False)+'\n',encoding='utf8')
+              print('MARKET DATABASE BUILD',manifest['status'])
+              print(json.dumps({k:manifest.get(k) for k in ('input_files','table_counts','core_gaps','error','sqlite_bytes')},ensure_ascii=False))
+              return 0 if manifest['status']=='ready' else 1
+
+          if __name__ == '__main__':sys.exit(main())
+          PY_DATABASE
+          python /tmp/build_market_db.py
+
+      - name: Upload queryable database as downloadable artifact
+        if: steps.create_database.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: btc-eth-longterm-sqlite
+          path: data/warehouse/btc_eth_market.sqlite
+          retention-days: 30
+          if-no-files-found: error
+          compression-level: 6
+
+      - name: Preserve small database quality manifest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -f data/warehouse_manifest.json ]; then
+            echo "No database manifest was generated" >&2
+            exit 1
+          fi
+          git add data/warehouse_manifest.json
+          if git diff --cached --quiet; then
+            echo "Manifest already current"
+            exit 0
+          fi
+          git commit -m "Refresh BTC ETH warehouse integrity manifest"
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then
+              echo "Warehouse manifest saved"
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          echo "Failed to persist warehouse manifest" >&2
+          exit 1
+
+      - name: Fail if market history is incomplete or corrupt
+        if: steps.create_database.outcome == 'failure'
+        run: |
+          echo "Research database incomplete: inspect data/warehouse_manifest.json"
+          exit 1
