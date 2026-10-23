@@ -1,0 +1,143 @@
+name: BTC ETH Data Health Watch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '3,33 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-eth-health-watch
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out current data
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Validate freshness and required fields
+        id: check
+        continue-on-error: true
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, math, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          now = datetime.now(timezone.utc)
+          checks = []
+          def record(name, passed, detail=""):
+              checks.append({"check": name, "passed": bool(passed), "detail": str(detail)})
+              print(("PASS" if passed else "FAIL") + " | " + name + " | " + str(detail), flush=True)
+          def load(path):
+              try:
+                  obj = json.loads(Path(path).read_text(encoding="utf-8"))
+                  record("valid JSON: " + path, True)
+                  return obj
+              except Exception as e:
+                  record("valid JSON: " + path, False, type(e).__name__ + ": " + str(e)[:160])
+                  return None
+          def as_utc(s):
+              dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+              if dt.tzinfo is None:
+                  raise ValueError("timestamp missing timezone")
+              return dt.astimezone(timezone.utc)
+          def freshness(label, value, max_hours):
+              try:
+                  hours = (now - as_utc(value)).total_seconds() / 3600
+                  record(label, -0.15 <= hours <= max_hours,
+                         f"age={hours:.2f}h limit={max_hours}h")
+              except Exception as e:
+                  record(label, False, str(e))
+          def windows(label, obj):
+              for w in ("1h", "4h", "24h"):
+                  status = obj.get(w, {}).get("status")
+                  record(label + " " + w, status == "ok", status)
+
+          vp = load("data/volume_profile_summary.json")
+          if vp:
+              freshness("VPVR file generated", vp.get("generated_utc", ""), 36)
+              freshness("VPVR underlying data age", vp.get("data_end_utc_exclusive", ""), 120)
+              for sym in ("BTCUSDT", "ETHUSDT"):
+                  for w in ("30d", "26w", "52w"):
+                      p = vp.get("profiles", {}).get(sym + "_" + w, {})
+                      try:
+                          cov = float(p.get("coverage", 0))
+                          poc = float(p.get("most_traded_price_POC_usd", 0))
+                          n = int(p.get("number_of_5m_bars", 0))
+                          good = cov >= 0.99 and n > 0 and math.isfinite(poc) and poc > 0
+                          record(f"VPVR {sym} {w}", good,
+                                 f"coverage={cov:.3f}, bars={n}")
+                      except Exception as e:
+                          record(f"VPVR {sym} {w}", False, str(e))
+
+          spot = load("data/market_flow_latest.json")
+          if spot:
+              freshness("Spot file collected", spot.get("collected_utc", ""), 1.5)
+              for sym in ("BTCUSDT", "ETHUSDT"):
+                  a = spot.get("assets", {}).get(sym, {})
+                  status = a.get("quality", {}).get("spot_flow")
+                  record(f"Spot {sym} status", status == "ok", status)
+                  flow = a.get("spot", {}).get("flow", {})
+                  windows(f"Spot {sym} taker flow", flow.get("windows", {}))
+                  freshness(f"Spot {sym} last closed bar",
+                            flow.get("last_closed_bar_utc", ""), 1.5)
+
+          fut = load("data/coinalyze_derivatives_latest.json")
+          if fut:
+              freshness("Coinalyze file generated", fut.get("generated_utc", ""), 1.5)
+              for sym in ("BTC", "ETH"):
+                  a = fut.get("assets", {}).get(sym, {})
+                  for key in ("open_interest", "futures_flow", "liquidations", "funding"):
+                      status = a.get("quality", {}).get(key)
+                      record(f"Futures {sym} {key}", status == "ok", status)
+                  windows(f"Futures {sym} CVD", a.get("futures_flow", {}).get("windows", {}))
+                  windows(f"Futures {sym} liquidations", a.get("liquidations", {}).get("windows", {}))
+                  windows(f"Futures {sym} OI change", a.get("open_interest", {}).get("changes", {}))
+
+          failed = [x for x in checks if not x["passed"]]
+          summary = {
+              "checked_utc": now.isoformat().replace("+00:00", "Z"),
+              "status": "healthy" if not failed else "unhealthy",
+              "failed_count": len(failed), "checked_count": len(checks),
+              "checks": checks,
+              "scope": "BTC/ETH VPVR, Binance spot, Coinalyze Binance perpetuals",
+              "note": "Data freshness and fields only. Not a market prediction score."
+          }
+          dest = Path("data/system_health.json")
+          dest.parent.mkdir(exist_ok=True)
+          dest.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(f"SUMMARY: {summary['status']} ({len(checks)-len(failed)}/{len(checks)})")
+          if failed:
+              sys.exit(1)
+          PY
+
+      - name: Save health status to repository
+        if: always()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/system_health.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update BTC ETH data health status"
+            for attempt in 1 2 3; do
+              git fetch origin main
+              git rebase origin/main
+              if git push origin HEAD:main; then exit 0; fi
+              sleep 2
+            done
+            exit 1
+          fi
+
+      - name: Mark unhealthy data as failure
+        if: steps.check.outcome == 'failure'
+        run: exit 1
