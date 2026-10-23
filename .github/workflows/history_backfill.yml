@@ -1,0 +1,402 @@
+name: BTC ETH Historical Gap Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: 'Historical recovery window (hours); 48 is recommended'
+        required: true
+        default: '48'
+        type: choice
+        options:
+          - '24'
+          - '48'
+          - '72'
+  schedule:
+    - cron: '49 */2 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-eth-historical-gap-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COINALYZE_API_KEY: ${{ secrets.COINALYZE_API_KEY }}
+      LOOKBACK_HOURS: ${{ inputs.lookback_hours || '48' }}
+    steps:
+      - name: Check out market data repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Recover available CLOSED historical data, merge by time key
+        id: recover
+        continue-on-error: true
+        shell: bash
+        run: |
+          cat > /tmp/history_backfill.py <<'PY_BACKFILL'
+          #!/usr/bin/env python3
+          """Reconstruct only vendor-published, CLOSED past BTC/ETH market-data buckets.
+          
+          Never reconstruct order-book history or silently assume missing liquidation bins are zero.
+          Archives are UTC-day, deduplicated immutable-time-key series in deterministic gzip JSON.
+          """
+          import gzip
+          import json
+          import math
+          import os
+          import sys
+          import time
+          from collections import defaultdict
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from urllib.error import HTTPError, URLError
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          
+          SYMBOLS = ('BTC', 'ETH')
+          BAR_5M = 300
+          BAR_15M = 900
+          BAR_1H = 3600
+          ROOT = Path('data/market_archive')
+          STATUS = Path('data/backfill_status.json')
+          BSPOT = 'https://data-api.binance.vision/api/v3/klines'
+          COINALYZE = 'https://api.coinalyze.net/v1/'
+          SERIES_WIDTH = {'spot_5m':300, 'futures_5m':300, 'oi_15m':900,
+                          'liquidations_15m':900, 'liquidations_1h':3600, 'funding_1h':3600}
+          SOURCE_MAP = {'spot_5m':'Binance Spot REST market-data-only',
+                        'futures_5m':'Coinalyze Binance USDT perpetual OHLCV',
+                        'oi_15m':'Coinalyze Binance USDT perpetual native OI OHLC',
+                        'liquidations_15m':'Coinalyze reported Binance liquidations USD, sparse bins',
+                        'liquidations_1h':'Coinalyze reported Binance liquidations USD, hourly bins',
+                        'funding_1h':'Coinalyze reported Binance funding rate OHLC (raw provider units)'}
+          
+          
+          def utc(ts):
+              return datetime.fromtimestamp(ts,timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+          
+          
+          def safe_num(v, nonnegative=False):
+              x=float(v)
+              if not math.isfinite(x) or (nonnegative and x<0):
+                  raise ValueError('invalid numeric field')
+              return x
+          
+          
+          def fetch_json(url,params,api_key=None):
+              uri=url+'?'+urlencode(params)
+              headers={'User-Agent':'BTC-ETH-Gap-Backfill/1.0'}
+              if api_key: headers['api_key']=api_key
+              error=None
+              for attempt in range(3):
+                  try:
+                      with urlopen(Request(uri,headers=headers),timeout=25) as res:
+                          return json.loads(res.read(6_000_000))
+                  except HTTPError as exc:
+                      error=f'HTTP {exc.code}'
+                      if exc.code==429 and attempt<2:
+                          delay=exc.headers.get('Retry-After','')
+                          try: wait=min(20,max(1,float(delay)))
+                          except (ValueError,TypeError): wait=2*(attempt+1)
+                          time.sleep(wait)
+                          continue
+                      if exc.code in (400,401,403,404,418,451):break
+                  except (URLError, TimeoutError, OSError, ValueError) as exc:
+                      error=type(exc).__name__
+                  if attempt<2:time.sleep(1+attempt)
+              raise RuntimeError(error or 'request failed')
+          
+          
+          def market_symbols(api_key):
+              exchanges=fetch_json(COINALYZE+'exchanges',{},api_key)
+              markets=fetch_json(COINALYZE+'future-markets',{},api_key)
+              if not isinstance(exchanges,list) or not isinstance(markets,list):raise ValueError('metadata invalid')
+              codes={str(e.get('code','')).lower() for e in exchanges if isinstance(e,dict)
+                     and 'binance' in str(e.get('name','')).lower()}
+              chosen={}
+              for base in SYMBOLS:
+                  matches=[m for m in markets if isinstance(m,dict)
+                           and (str(m.get('exchange','')).lower() in codes or 'binance' in str(m.get('exchange','')).lower())
+                           and str(m.get('base_asset','')).upper()==base
+                           and str(m.get('quote_asset','')).upper()=='USDT'
+                           and str(m.get('symbol_on_exchange','')).upper()==base+'USDT'
+                           and m.get('is_perpetual') is True
+                           and str(m.get('margined','')).upper()=='STABLE'
+                           and m.get('has_buy_sell_data') is True]
+                  if len(matches)>1:
+                      matches=[m for m in matches if '_PERP' in str(m.get('symbol','')).upper()]
+                  if len(matches)!=1:raise ValueError(f'{base} Binance USDT perpetual ambiguous or no buy/sell field')
+                  chosen[base]=matches[0]['symbol']
+              return chosen
+          
+          
+          def vendor_rows(data,sym):
+              if not isinstance(data,list):raise ValueError('vendor response not list')
+              matches=[i for i in data if isinstance(i,dict) and i.get('symbol')==sym]
+              if len(matches)!=1 or not isinstance(matches[0].get('history'),list):
+                  raise ValueError('market missing in response')
+              return matches[0]['history']
+          
+          
+          def spot_bars(symbol,start,end):
+              result=[]
+              cursor=start*1000
+              while cursor<end*1000:
+                  raw=fetch_json(BSPOT,{'symbol':symbol+'USDT','interval':'5m','startTime':cursor,
+                                        'endTime':end*1000-1,'limit':1000})
+                  if not isinstance(raw,list):raise ValueError('spot API response not list')
+                  if not raw:break
+                  for row in raw:
+                      t=int(row[0])//1000
+                      if not(start<=t and t+BAR_5M<=end and t%BAR_5M==0):continue
+                      volume=safe_num(row[5],True)
+                      q=safe_num(row[7],True)
+                      buy=safe_num(row[9],True); buyq=safe_num(row[10],True)
+                      if buy>volume*(1+1e-6) or buyq>q*(1+1e-6):continue
+                      result.append({'t':t,'o':safe_num(row[1]),'h':safe_num(row[2]),
+                        'l':safe_num(row[3]),'c':safe_num(row[4]),'v_base':volume,
+                        'v_quote_usdt':q,'buy_base':buy,'buy_quote_usdt':buyq,
+                        'sell_quote_usdt':max(0,q-buyq)})
+                  last=int(raw[-1][0])
+                  new=last+BAR_5M*1000
+                  if new<=cursor:raise ValueError('nonadvancing spot pagination')
+                  cursor=new
+                  if len(raw)<1000:break
+              return result
+          
+          
+          def normalize_vendor(series,rows,start,end):
+              width=SERIES_WIDTH[series]
+              normalized=[]
+              for x in rows:
+                  try:
+                      if not isinstance(x,dict) or not isinstance(x.get('t'),int):continue
+                      t=x['t']
+                      if not(start<=t and t+width<=end and t%width==0):continue
+                      if series=='futures_5m':
+                          v=safe_num(x['v'],True); buy=safe_num(x['bv'],True)
+                          if buy>v*(1+1e-5):continue
+                          row={'t':t,'o':safe_num(x['o']),'h':safe_num(x['h']),
+                            'l':safe_num(x['l']),'c':safe_num(x['c']),
+                            'v_native':v,'buy_native':buy,'sell_native':max(0,v-buy)}
+                      elif series=='oi_15m':
+                          row={'t':t,'o':safe_num(x['o'],True),'h':safe_num(x['h'],True),
+                               'l':safe_num(x['l'],True),'c':safe_num(x['c'],True)}
+                      elif series.startswith('liquidations_'):
+                          row={'t':t,'long_usd':safe_num(x['l'],True),'short_usd':safe_num(x['s'],True)}
+                      elif series=='funding_1h':
+                          row={'t':t,'o':safe_num(x['o']),'h':safe_num(x['h']),
+                               'l':safe_num(x['l']),'c':safe_num(x['c'])}
+                      else:raise ValueError('invalid series')
+                      normalized.append(row)
+                  except (TypeError,ValueError,KeyError,OverflowError):continue
+              return normalized
+          
+          
+          def archive_path(symbol,day):
+              return ROOT/day/(symbol+'.json.gz')
+          
+          
+          def read_archive(path,symbol,day):
+              if not path.exists():
+                  return {'schema_version':1,'symbol':symbol,'utc_day':day,
+                          'time_key':'t (UTC Unix seconds, start of closed vendor bucket)',
+                          'sources':SOURCE_MAP,'series':{k:[] for k in SERIES_WIDTH}}
+              try:
+                  with gzip.open(path,'rt',encoding='utf8') as file: d=json.load(file)
+                  if d.get('schema_version')!=1 or d.get('symbol')!=symbol or d.get('utc_day')!=day:
+                      raise ValueError('archive schema/symbol mismatch')
+                  if any(not isinstance(d.get('series',{}).get(k),list) for k in SERIES_WIDTH):
+                      raise ValueError('missing archive series')
+                  return d
+              except Exception as e:raise RuntimeError(f'Corrupt archive {path}: {type(e).__name__}') from e
+          
+          
+          def save_archive(path,doc):
+              path.parent.mkdir(parents=True,exist_ok=True)
+              raw=(json.dumps(doc,ensure_ascii=False,separators=(',',':'),allow_nan=False,sort_keys=True)+'\n').encode('utf8')
+              compressed=gzip.compress(raw,compresslevel=7,mtime=0)
+              if path.exists() and path.read_bytes()==compressed:return False
+              path.write_bytes(compressed)
+              return True
+          
+          
+          def merge_archives(symbol,observations):
+              by_day=defaultdict(lambda:defaultdict(list))
+              for series,rows in observations.items():
+                  for row in rows:
+                      day=datetime.fromtimestamp(row['t'],timezone.utc).strftime('%Y-%m-%d')
+                      by_day[day][series].append(row)
+              updated=0; inserted=0; revised=0
+              for day,series_map in sorted(by_day.items()):
+                  path=archive_path(symbol,day)
+                  doc=read_archive(path,symbol,day)
+                  for series,rows in series_map.items():
+                      previous={x['t']:x for x in doc['series'][series]}
+                      for row in rows:
+                          old=previous.get(row['t'])
+                          if old is None:inserted+=1
+                          elif old!=row:revised+=1
+                          previous[row['t']]=row
+                      doc['series'][series]=[previous[t] for t in sorted(previous)]
+                  if save_archive(path,doc):updated+=1
+              return {'day_files_changed':updated,'new_buckets':inserted,'revised_buckets':revised}
+          
+          
+          def coverage(rows,start,end,width):
+              end=(end//width)*width
+              start=((start+width-1)//width)*width
+              expect=list(range(start,end,width))
+              seen={x['t'] for x in rows if start<=x['t']<end and x['t']+width<=end}
+              missing=[t for t in expect if t not in seen]
+              return {'expected':len(expect),'observed':len(expect)-len(missing),'missing':len(missing),
+                      'missing_examples_utc':[utc(t) for t in missing[:6]],
+                      'missing_bins_are_unknown_not_zero':True}
+          
+          
+          def run(now=None,lookback=None,source_fetch=None):
+              if now is None:now=int(time.time())
+              now=int(now)
+              lookback=lookback if lookback is not None else int(os.environ.get('LOOKBACK_HOURS','48'))
+              if lookback not in (24,48,72):raise ValueError('LOOKBACK_HOURS must be 24, 48, or 72')
+              end=(now//BAR_5M)*BAR_5M - BAR_5M  # skip last close boundary for vendor publication lag
+              start=end-lookback*3600
+              api_key=os.environ.get('COINALYZE_API_KEY','').strip()
+              if source_fetch is None and not api_key:raise RuntimeError('COINALYZE_API_KEY secret required')
+              observations={a:{} for a in SYMBOLS}
+              errors=[]
+              try:
+                  symbols=market_symbols(api_key) if source_fetch is None else {s:s+'USDT_PERP.A' for s in SYMBOLS}
+              except Exception as exc:
+                  symbols={}
+                  errors.append('Coinalyze market discovery: '+type(exc).__name__+' '+str(exc)[:100])
+              # Binance Spot REST 5m history, independent of futures API restrictions.
+              for asset in SYMBOLS:
+                  try:
+                      rows=spot_bars(asset,start,end) if source_fetch is None else source_fetch('spot_5m',asset,start,end)
+                      observations[asset]['spot_5m']=rows
+                  except Exception as exc:
+                      observations[asset]['spot_5m']=[]
+                      errors.append(f'{asset} spot: {type(exc).__name__} {str(exc)[:70]}')
+              # Consolidated Coinalyze historical requests; two symbols per request.
+              query_specs=(('futures_5m','ohlcv-history','5min',False),
+                           ('oi_15m','open-interest-history','15min',False),
+                           ('liquidations_15m','liquidation-history','15min',True),
+                           ('liquidations_1h','liquidation-history','1hour',True),
+                           ('funding_1h','funding-rate-history','1hour',False))
+              for series,endpoint,interval,usd in query_specs:
+                  if not symbols:
+                      for asset in SYMBOLS:observations[asset][series]=[]
+                      continue
+                  try:
+                      if source_fetch is not None:
+                          vendor={asset:source_fetch(series,asset,start,end) for asset in SYMBOLS}
+                      else:
+                          params={'symbols':','.join(symbols[a] for a in SYMBOLS),'interval':interval,
+                                  'from':start,'to':now}
+                          if usd:params['convert_to_usd']='true'
+                          data=fetch_json(COINALYZE+endpoint,params,api_key)
+                          vendor={asset:vendor_rows(data,symbols[asset]) for asset in SYMBOLS}
+                      for asset in SYMBOLS:
+                          observations[asset][series]=normalize_vendor(series,vendor[asset],start,end)
+                  except Exception as exc:
+                      for asset in SYMBOLS:observations[asset][series]=[]
+                      errors.append(f'{series}: {type(exc).__name__} {str(exc)[:75]}')
+              counts={a:{} for a in SYMBOLS}
+              merges={}
+              for asset in SYMBOLS:
+                  merges[asset]=merge_archives(asset,observations[asset])
+                  for series,width in SERIES_WIDTH.items():
+                      # Coverage for this run's vendor response alone: do not mistake a sparse
+                      # response for zero. Overlapped historical archive data is checked later.
+                      counts[asset][series]=coverage(observations[asset].get(series,[]),start,end,width)
+              # Coverage across retained archives (may include earlier runs filling omissions).
+              for asset in SYMBOLS:
+                  archive_rows={s:[] for s in SERIES_WIDTH}
+                  day=datetime.fromtimestamp(start,timezone.utc).date()
+                  last=datetime.fromtimestamp(end-1,timezone.utc).date()
+                  from datetime import timedelta
+                  while day<=last:
+                      p=archive_path(asset,day.isoformat())
+                      if p.exists():
+                          d=read_archive(p,asset,day.isoformat())
+                          for s in SERIES_WIDTH:archive_rows[s].extend(d['series'][s])
+                      day+=timedelta(days=1)
+                  for series,width in SERIES_WIDTH.items():
+                      counts[asset][series]['archive_coverage']=coverage(archive_rows[series],start,end,width)
+              for asset in SYMBOLS:
+                  for crucial in ('spot_5m','futures_5m'):
+                      if not observations[asset][crucial]:
+                          errors.append(f'{asset} {crucial}: no closed history rows returned')
+              summary={'generated_utc':utc(now),'window_start_utc':utc(start),'window_end_exclusive_utc':utc(end),
+                       'requested_hours':lookback,'symbols':['BTCUSDT','ETHUSDT'],
+                       'status':'core_complete' if not errors and all(counts[a][s]['archive_coverage']['missing']==0
+                           for a in SYMBOLS for s in ('spot_5m','futures_5m','oi_15m')) else 'partial',
+                       'coverage':counts,'archive_changes':merges,'errors':errors,
+                       'method':'Closed UTC buckets fetched again, merged by venue+symbol+interval+start timestamp; missing is NOT zero.',
+                       'limitations':['This restores historical OHLCV, OI, funding and vendor-aggregated liquidation bins, not historical order books or tick-level absorption.',
+                         'Coinalyze intraday history has limited retention; gaps outside the requested lookback cannot be reconstructed by this run.',
+                         'Coinalyze may omit zero/no-event liquidation bins: absence is unknown, not automatically a failure or zero.',
+                         'Historical data may be revised; revised timestamp buckets are replaced with latest validated vendor values.',
+                         'Funding rate OHLC retained in provider raw units; no percent conversion implied.']}
+              STATUS.parent.mkdir(parents=True,exist_ok=True)
+              STATUS.write_text(json.dumps(summary,ensure_ascii=False,indent=2,allow_nan=False)+'\n',encoding='utf8')
+              print('ARCHIVE BACKFILL',summary['status'],utc(start),'to',utc(end))
+              for asset in SYMBOLS:
+                  print(asset,merges[asset])
+                  for s in SERIES_WIDTH:
+                      c=counts[asset][s]['archive_coverage']
+                      print(' ',s,f'{c["observed"]}/{c["expected"]} closed buckets; missing={c["missing"]}')
+              if errors:
+                  print('Errors:', '; '.join(errors),file=sys.stderr)
+              return 1 if errors or any(counts[a][s]['archive_coverage']['missing'] for a in SYMBOLS
+                                       for s in ('spot_5m','futures_5m','oi_15m')) else 0
+          
+          
+          if __name__=='__main__':
+              sys.exit(run())
+          PY_BACKFILL
+          python /tmp/history_backfill.py
+
+      - name: Persist status and deduplicated UTC-day archives
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -f data/backfill_status.json ]; then git add data/backfill_status.json; fi
+          if [ -d data/market_archive ]; then git add -A data/market_archive; fi
+          if git diff --cached --quiet; then
+            echo "No new archive or status to save"
+            exit 0
+          fi
+          git commit -m "Backfill BTC ETH historical market buckets"
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then
+              echo "Saved historical archive after attempt ${attempt}"
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          echo "Failed to persist archive after retries" >&2
+          exit 1
+
+      - name: Fail when essential history still has gaps
+        if: steps.recover.outcome == 'failure'
+        run: |
+          echo "History incomplete: check data/backfill_status.json"
+          exit 1
