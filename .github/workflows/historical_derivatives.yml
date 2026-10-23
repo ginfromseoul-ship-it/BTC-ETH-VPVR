@@ -56,6 +56,7 @@ jobs:
           import math
           import os
           import re
+          import statistics
           import sys
           import time
           import zipfile
@@ -129,30 +130,82 @@ jobs:
               return x
           
           
+          def taker_ratio_alignment(rows,symbol,day):
+              """Compare metrics 5m taker ratios with exchange futures klines.
+
+              The ratio is a flow measurement for one completed 5m interval. The
+              corresponding kline is indexed by its START, while OI is indexed
+              by its actual observation END. This check distinguishes start-
+              from end-labeled archives without trusting the file date alone.
+              """
+              cached={}
+              def actual_ratio(bucket):
+                  d=datetime.fromtimestamp(bucket,UTC).strftime('%Y-%m-%d')
+                  if d not in cached:
+                      doc,_=existing_doc(d,symbol)
+                      cached[d]={r['t']:r for r in doc['series']['futures_5m']}
+                  row=cached[d].get(bucket)
+                  if row is None:return None
+                  b=float(row['buy_native']);v=float(row['sell_native'])
+                  return b/v if b>0 and v>0 else None
+              scores={}
+              for mode in ('start','end'):
+                  errors=[]
+                  for row in rows:
+                      t=parse_time(row['create_time'])
+                      reference=actual_ratio(t if mode=='start' else t-300)
+                      if reference is None:continue
+                      observed=floating(row['sum_taker_long_short_vol_ratio'],'taker_ratio',True)
+                      if observed<=0:continue
+                      errors.append(abs(math.log(observed/reference)))
+                  scores[mode]={'samples':len(errors),'median_absolute_log_error':round(statistics.median(errors),7) if errors else None}
+              return scores
+
           def metrics_parse(rows,symbol,day):
-              """Normalize every row to the actual end-time of the 5m OI observation."""
+              """Normalize vendor labels by observed pattern, audit anomalies against trades."""
               first=day_start(day)
-              is_new=day>=CUTOFF
-              expected_labels=set(range(first,first+86400,300)) if is_new else set(range(first+300,first+86400+300,300))
-              labels=set();out={}
-              if len(rows)!=288:raise ValueError(f'{day} {symbol} metrics rows {len(rows)} !=288')
-              for row in rows:
-                  label=parse_time(row['create_time'])
-                  if label not in expected_labels or label in labels:raise ValueError(f'{day} incorrect/duplicated metrics label {stamp(label)}')
-                  labels.add(label)
+              start_labels=set(range(first,first+86400,300))
+              end_labels=set(range(first+300,first+86400+300,300))
+              labels=[parse_time(r['create_time']) for r in rows]
+              actual=set(labels)
+              if len(rows)!=288 or len(actual)!=288:
+                  raise ValueError(f'{day} {symbol} metrics rows={len(rows)} unique={len(actual)} expected=288')
+              if actual==start_labels:mode='start'
+              elif actual==end_labels:mode='end'
+              else:
+                  raise ValueError(f'{day} {symbol} irregular 5m label pattern: '
+                                   f'first={stamp(min(actual))},last={stamp(max(actual))}, '
+                                   f'outside_start={len(actual-start_labels)},outside_end={len(actual-end_labels)}')
+              expected='start' if day>=CUTOFF else 'end'
+              score=None
+              if mode!=expected or day in (date(2026,6,24),date(2026,6,25)):
+                  score=taker_ratio_alignment(rows,symbol,day)
+                  right=score[mode];other=score['end' if mode=='start' else 'start']
+                  err=right['median_absolute_log_error'];other_err=other['median_absolute_log_error']
+                  if (right['samples']<200 or err is None or err>0.07 or
+                       other_err is None or err*2>other_err):
+                      raise ValueError(f'{day} {symbol} timestamp label mode={mode} '
+                                       f'cannot be proven by futures taker ratios: {score}')
+              out={}
+              for row,label in zip(rows,labels):
                   if row.get('symbol') and str(row['symbol']).strip()!=symbol+'USDT':
                       raise ValueError('symbol mismatch')
                   native=floating(row['sum_open_interest'],'sum_open_interest',True)
                   notional=floating(row['sum_open_interest_value'],'sum_open_interest_value',True)
                   if native<=0 or notional<=0:raise ValueError('nonpositive OI')
-                  observed_at=label+300 if is_new else label
+                  observed_at=label+300 if mode=='start' else label
+                  if observed_at in out:raise ValueError('duplicate normalized OI timestamp')
                   out[observed_at]={
                       't':observed_at,'native':native,'notional_usdt':notional,
-                      'raw_label_t':label,'label_convention':'start_plus_5m' if is_new else 'end_at_T'}
-              if labels!=expected_labels or len(out)!=288:raise ValueError('metrics coverage incomplete')
-              return out
-          
-          
+                      'raw_label_t':label,'label_convention':'start_plus_5m' if mode=='start' else 'end_at_T'}
+              audit={'label_mode':mode,'date_policy_mode':expected,'exception':mode!=expected,
+                     'observations':len(out),'label_first_utc':stamp(min(actual)),
+                     'label_last_utc':stamp(max(actual)),'taker_ratio_audit':score}
+              if mode!=expected:
+                  print('AUDITED DATE EXCEPTION',symbol,day,mode,'rather than',expected,score,flush=True)
+              return out,audit
+
+
           def funding_parse(rows,symbol,month):
               a=day_start(month);b=day_start(next_month(month))
               out={}
@@ -217,13 +270,14 @@ jobs:
               pair=symbol+'USDT'
               url=f'{BASE}/daily/metrics/{pair}/{pair}-metrics-{day.isoformat()}.zip'
               rows,sha=verified_csv(url)
-              return ('oi',symbol,day.isoformat(),metrics_parse(rows,symbol,day),url,sha)
+              points,audit=metrics_parse(rows,symbol,day)
+              return ('oi',symbol,day.isoformat(),points,url,sha,audit)
           
           def monthly_funding(symbol,month):
               pair=symbol+'USDT';label=month.strftime('%Y-%m')
               url=f'{BASE}/monthly/fundingRate/{pair}/{pair}-fundingRate-{label}.zip'
               rows,sha=verified_csv(url)
-              return ('funding',symbol,label,funding_parse(rows,symbol,month),url,sha)
+              return ('funding',symbol,label,funding_parse(rows,symbol,month),url,sha,None)
           
           def tasks_for(scope,now):
               if scope=='pilot':
@@ -249,7 +303,7 @@ jobs:
               report={'generated_utc':stamp(int(now.timestamp())),'status':'running','scope':scope,
                       'total_source_zips':len(tasks),'completed_source_zips':0,'records_new':0,
                       'new_archive_files_modified':0,'checksum_verified':0,
-                      'oi_label_transition':'2026-06-25 UTC; old raw T=end observation; new raw T=start + 300 sec',
+                      'oi_label_transition':'Data driven label-shape detection, taker-ratio audit on 2026-06-24/25 and any other date-policy exceptions',
                       'time_semantics':'binance_oi_5m.t is normalized OI observation time, never raw after-shift label',
                       'funding_semantics':'binance_funding_settlements.t is actual settlement event timestamp; rate_decimal raw decimal',
                       'note':'Added independent source series only; current SQLite market warehouse does not yet consume them.',
@@ -262,11 +316,12 @@ jobs:
                   for completed in as_completed(jobs):
                       task=jobs[completed]
                       try:
-                          typ,s,label,data,url,sha=completed.result()
+                          typ,s,label,data,url,sha,audit=completed.result()
                           stats=merge_records(s,'binance_oi_5m' if typ=='oi' else 'binance_funding_settlements',data)
                           report['completed_source_zips']+=1;report['checksum_verified']+=1
                           report['records_new']+=stats['new_points'];report['new_archive_files_modified']+=stats['changed_day_files']
-                          report['sources'].append({'kind':typ,'symbol':s,'period':label,'sha256':sha,'records':len(data),**stats})
+                          report['sources'].append({'kind':typ,'symbol':s,'period':label,'sha256':sha,
+                                                    'records':len(data),'timestamp_audit':audit,**stats})
                           print('OK',typ,s,label,'+',stats['new_points'],flush=True)
                       except Exception as ex:
                           report['failures'].append({'source':str(task),'error':type(ex).__name__+': '+str(ex)[:230]})
