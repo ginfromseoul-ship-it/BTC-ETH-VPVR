@@ -1,0 +1,114 @@
+{
+  "generated_utc": "2026-10-23T05:52:32Z",
+  "status": "partial",
+  "scope": "pilot",
+  "total_source_zips": 10,
+  "completed_source_zips": 8,
+  "records_new": 1908,
+  "new_archive_files_modified": 72,
+  "checksum_verified": 8,
+  "oi_label_transition": "2026-06-25 UTC; old raw T=end observation; new raw T=start + 300 sec",
+  "time_semantics": "binance_oi_5m.t is normalized OI observation time, never raw after-shift label",
+  "funding_semantics": "binance_funding_settlements.t is actual settlement event timestamp; rate_decimal raw decimal",
+  "note": "Added independent source series only; current SQLite market warehouse does not yet consume them.",
+  "sources": [
+    {
+      "kind": "funding",
+      "symbol": "BTC",
+      "period": "2026-09",
+      "sha256": "913cd31b8f924a06717a2fac17f3df6132c24ccded209eb3e4ae7d83e1b247f2",
+      "records": 90,
+      "new_points": 90,
+      "exact_duplicate_points": 0,
+      "changed_day_files": 30,
+      "conflicts": 0
+    },
+    {
+      "kind": "funding",
+      "symbol": "ETH",
+      "period": "2026-09",
+      "sha256": "d1916b9181cf3507ad5a6522ac6587cd84a424941f1a2132ab887f768b5dd4de",
+      "records": 90,
+      "new_points": 90,
+      "exact_duplicate_points": 0,
+      "changed_day_files": 30,
+      "conflicts": 0
+    },
+    {
+      "kind": "oi",
+      "symbol": "BTC",
+      "period": "2026-06-25",
+      "sha256": "56e0751dabd8108d61d1f9de86931ac68e901dad202d4dbac03173e2768be68e",
+      "records": 288,
+      "new_points": 288,
+      "exact_duplicate_points": 0,
+      "changed_day_files": 2,
+      "conflicts": 0
+    },
+    {
+      "kind": "oi",
+      "symbol": "ETH",
+      "period": "2026-06-25",
+      "sha256": "babb083bc28652856a247965e07b8faa3d05b69daa41ef9892f3ed6fbc7a8ba5",
+      "records": 288,
+      "new_points": 288,
+      "exact_duplicate_points": 0,
+      "changed_day_files": 2,
+      "conflicts": 0
+    },
+    {
+      "kind": "oi",
+      "symbol": "BTC",
+      "period": "2026-06-26",
+      "sha256": "c06c1de4e3ab250acff83e71feb56344ae5b3cf31cd420f3ea9cfcf492976b0c",
+      "records": 288,
+      "new_points": 288,
+      "exact_duplicate_points": 0,
+      "changed_day_files": 2,
+      "conflicts": 0
+    },
+    {
+      "kind": "oi",
+      "symbol": "ETH",
+      "period": "2026-06-26",
+      "sha256": "15a6083fd5b8ac84c8f120689a9c942c54015fe5e69459d48fc55495d16b48a0",
+      "records": 288,
+      "new_points": 288,
+      "exact_duplicate_points": 0,
+      "changed_day_files": 2,
+      "conflicts": 0
+    },
+    {
+      "kind": "oi",
+      "symbol": "BTC",
+      "period": "2026-10-20",
+      "sha256": "bc7bde46301d87d8f161454715547913f9b5a984b127d5bce809cbcbe535ae06",
+      "records": 288,
+      "new_points": 288,
+      "exact_duplicate_points": 0,
+      "changed_day_files": 2,
+      "conflicts": 0
+    },
+    {
+      "kind": "oi",
+      "symbol": "ETH",
+      "period": "2026-10-20",
+      "sha256": "d789d5a82a0426ec1b7f755c6c6d2ef704bcf8aba069d7418fe432e4c98aad05",
+      "records": 288,
+      "new_points": 288,
+      "exact_duplicate_points": 0,
+      "changed_day_files": 2,
+      "conflicts": 0
+    }
+  ],
+  "failures": [
+    {
+      "source": "('oi', 'BTC', datetime.date(2026, 6, 24))",
+      "error": "ValueError: 2026-06-24 incorrect/duplicated metrics label 2026-06-24T00:00:00Z"
+    },
+    {
+      "source": "('oi', 'ETH', datetime.date(2026, 6, 24))",
+      "error": "ValueError: 2026-06-24 incorrect/duplicated metrics label 2026-06-24T00:00:00Z"
+    }
+  ]
+}
