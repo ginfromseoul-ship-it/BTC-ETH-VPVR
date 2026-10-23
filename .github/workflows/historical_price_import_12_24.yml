@@ -1,0 +1,116 @@
+name: BTC ETH Historical Price Import 12-24 Months
+# EXTENDED_IMPORT_VERSION: 2026-10-23-v1
+# Separate from the already working historical_import.yml. Price/CVD only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      months:
+        description: 'First run 12. Select 24 only after the 12-month import is validated.'
+        required: true
+        type: choice
+        default: '12'
+        options:
+          - '12'
+          - '24'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: btc-eth-historical-monthly-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      MONTHS: ${{ inputs.months }}
+    steps:
+      - name: Checkout trusted project code and archived data
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Extract the previously validated importer and extend only its allowed months
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+          source = Path('.github/workflows/historical_import.yml').read_text(encoding='utf8')
+          start = "cat > /tmp/historical_import.py <<'PY_HISTORY'\n"
+          finish = '\n          PY_HISTORY'
+          if source.count(start) != 1 or source.count(finish) != 1:
+              raise RuntimeError('Original importer structure changed; STOP before modifying archives')
+          script = dedent(source.split(start, 1)[1].split(finish, 1)[0]) + '\n'
+          before = "if n not in (1,3,6):raise ValueError('MONTHS must be 1,3,6')"
+          after = "if n not in (1,3,6,12,24):raise ValueError('MONTHS must be 1,3,6,12,24')"
+          if script.count(before) != 1:
+              raise RuntimeError('Original month allowlist changed; STOP instead of guessing')
+          script = script.replace(before, after)
+          compile(script, '/tmp/historical_import.py', 'exec')
+          Path('/tmp/historical_import.py').write_text(script, encoding='utf8')
+          print('VERIFIED original importer, extended to MONTHS = 12 or 24')
+          PY
+      - name: Download and validate historical Binance 5-minute price and taker-volume records
+        id: import_data
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python /tmp/historical_import.py
+      - name: Save newly collected archive and import quality report
+        if: always() && steps.import_data.outcome != 'skipped'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A data/market_archive data/historical_import_report.json
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git commit -m "Expand BTC ETH historical 5-minute price dataset (${MONTHS} months)"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              echo 'Historical price archive and integrity report committed'
+              exit 0
+            fi
+            echo "Conflict detected, refreshing from latest main (attempt ${attempt})" >&2
+            git rebase --abort || true
+            git reset --hard origin/main
+            # Re-collect on current origin/main; never silently drop concurrent records.
+            python /tmp/historical_import.py
+            git add -A data/market_archive data/historical_import_report.json
+            if git diff --cached --quiet; then
+              echo 'Another successful job has already added these records'
+              exit 0
+            fi
+            git commit -m "Reconcile BTC ETH historical import (${MONTHS} months)"
+          done
+          echo 'Unable to commit safely after three attempts' >&2
+          exit 1
+      - name: Request V2 database rebuild
+        if: steps.import_data.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run warehouse_v2.yml --ref main
+          echo 'Warehouse V2 rebuild requested; verify that run separately'
+      - name: Flag any incomplete or rejected monthly source archives
+        if: steps.import_data.outcome == 'failure'
+        shell: bash
+        run: |
+          echo 'Partial historical import: inspect data/historical_import_report.json'
+          exit 1
