@@ -1,0 +1,308 @@
+name: BTC ETH Collection Reliability Stats
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 0 * * *'
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: btc-eth-reliability-stats
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Calculate collection reliability stats
+        run: |
+          cat > /tmp/metrics.py <<'PY_METRICS'
+          #!/usr/bin/env python3
+          """BTC ETH data collection reliability: measure observed GitHub Actions runs.
+          
+          No secrets are printed or persisted. Read-only Actions API and local data files.
+          Historical schedule coverage applies CURRENT cron schedule only to the time
+          since a workflow was created, and is an estimate not proof of each cron firing.
+          """
+          import json
+          import os
+          import re
+          import sys
+          import time
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+          
+          UTC = timezone.utc
+          REPO = os.environ.get('GITHUB_REPOSITORY', 'ginfromseoul-ship-it/BTC-ETH-VPVR')
+          TOKEN = os.environ.get('GH_TOKEN', '')
+          ASOF = datetime.now(UTC)
+          # Recent launches are excluded so queued or late scheduled jobs are not mislabeled missing.
+          END = ASOF - timedelta(minutes=90)
+          PERIODS = {'24h': timedelta(hours=24), '7d': timedelta(days=7), '30d': timedelta(days=30)}
+          WORKFLOWS = {
+              'VPVR': 'daily.yml',
+              'Spot CVD': 'market_flow.yml',
+              'Coinalyze futures': 'coinalyze.yml',
+              'Health checks': 'system_health.yml',
+              'Recovery manager': 'system_recovery.yml',
+          }
+          
+          
+          def iso(dt):
+              return dt.astimezone(UTC).isoformat().replace('+00:00','Z')
+          
+          
+          def parse_time(s):
+              if not s: raise ValueError('missing timestamp')
+              dt = datetime.fromisoformat(s.replace('Z', '+00:00'))
+              if dt.tzinfo is None: raise ValueError('timestamp without timezone')
+              return dt.astimezone(UTC)
+          
+          
+          def expand_field(field, size):
+              if field == '*': return set(range(size))
+              result=set()
+              for part in field.split(','):
+                  if not part.isdigit(): raise ValueError('Unsupported cron part '+part)
+                  x=int(part)
+                  if not 0<=x<size: raise ValueError('Invalid cron part '+part)
+                  result.add(x)
+              return result
+          
+          
+          def cron_schedule(path):
+              text=Path('.github/workflows',path).read_text('utf8')
+              matches=re.findall(r'cron:\s*[\'\"]([^\'\"]+)[\'\"]',text)
+              if len(matches)!=1: raise ValueError(f'{path}: unexpected number of cron rules {len(matches)}')
+              fields=matches[0].split()
+              if len(fields)!=5 or fields[2:] != ['*','*','*']:
+                  raise ValueError(f'{path}: unsupported cron {matches[0]}')
+              return matches[0],expand_field(fields[0],60),expand_field(fields[1],24)
+          
+          
+          def expected_slots(start,end,mins,hours):
+              cur=start.replace(second=0,microsecond=0)
+              if cur < start: cur+=timedelta(minutes=1)
+              n=0
+              while cur < end:
+                  if cur.minute in mins and cur.hour in hours: n+=1
+                  cur+=timedelta(minutes=1)
+              return n
+          
+          
+          def github_api(path,query=None):
+              if not TOKEN: raise RuntimeError('GH_TOKEN missing')
+              suffix=('?'+urlencode(query)) if query else ''
+              url=f'https://api.github.com/repos/{REPO}{path}{suffix}'
+              headers={
+                  'Authorization': 'Bearer '+TOKEN,
+                  'Accept':'application/vnd.github+json',
+                  'X-GitHub-Api-Version':'2022-11-28',
+                  'User-Agent':'btc-eth-reliability-stats'
+              }
+              err=None
+              for attempt in range(3):
+                  try:
+                      with urlopen(Request(url,headers=headers),timeout=25) as res:
+                          return json.load(res)
+                  except HTTPError as e:
+                      err=f'HTTP {e.code} on {path}'
+                      if e.code in (401,403,404,422): break
+                  except (URLError,TimeoutError,OSError,ValueError) as e:
+                      err=f'{type(e).__name__} on {path}: {e}'
+                  time.sleep(attempt+1)
+              raise RuntimeError(err or 'GitHub API failed')
+          
+          
+          def get_runs(workflow,start):
+              # GitHub may cap created-filter searches at 1,000 records. Keep each
+              # search interval short enough for scheduled 15-minute collectors.
+              unique={}
+              truncated=False
+              cursor=start
+              while cursor<END:
+                  stop=min(cursor+timedelta(days=5),END)
+                  page=1
+                  while page<=20:
+                      response=github_api(f'/actions/workflows/{workflow}/runs',{
+                          'created':f'{iso(cursor)}..{iso(stop)}',
+                          'per_page':100,'page':page,
+                          'exclude_pull_requests':'true',
+                      })
+                      if int(response.get('total_count',0))>=1000:
+                          truncated=True
+                      items=response.get('workflow_runs',[])
+                      for row in items:
+                          ident=row.get('id') or (row.get('created_at'),row.get('event'),row.get('run_number'))
+                          unique[ident]=row
+                      if len(items)<100: break
+                      page+=1
+                  else:
+                      truncated=True
+                  cursor=stop
+              return list(unique.values()),truncated
+          
+          
+          def load_latest_file(path,timekey,threshold_minutes):
+              try:
+                  d=json.loads(Path(path).read_text('utf8'))
+                  t=parse_time(d[timekey]);age=(ASOF-t).total_seconds()/60
+                  return {'status':'fresh' if (-10<=age<=threshold_minutes) else 'stale',
+                          'updated_utc':iso(t), 'age_minutes':round(age,1),
+                          'max_age_minutes':threshold_minutes}
+              except Exception as e:
+                  return {'status':'unavailable','reason':str(e)[:180]}
+          
+          
+          def calc():
+              start_all=END-PERIODS['30d']
+              report={'generated_utc':iso(ASOF),'analysis_cutoff_utc':iso(END),
+                  'methodology':{
+                   'scheduled_expected':'Current GitHub cron schedule applied only after workflow creation, excluding last 90 minutes.',
+                   'scheduled_observed':'Number of GitHub API runs whose event is schedule and created_at is inside the observation window.',
+                   'coverage':'Observed scheduled starts / expected cron occurrences. Approximate: no run to exact missed slot matching; can exceed 100%.',
+                   'run_success':'Successful completions / completed scheduled runs (excludes queued/in_progress).',
+                   'recovery':'workflow_dispatch counts only, includes manual and bot-triggered; success does NOT prove data was recovered.',
+                   'limitations':'Workflow schedules may be changed; applying current cron to historic days then is invalid. GitHub API does not directly establish independent market data continuity.'},
+                  'workflows':{}, 'latest_data':{},'alerts':[]}
+              for friendly,wf in WORKFLOWS.items():
+                  cron,minutes,hours=cron_schedule(wf)
+                  info=github_api('/actions/workflows/'+wf)
+                  created= parse_time(info.get('created_at')) if info.get('created_at') else None
+                  rows,truncated=get_runs(wf,start_all)
+                  parsed=[]
+                  for row in rows:
+                      try:
+                          t=parse_time(row.get('created_at'))
+                      except Exception: continue
+                      parsed.append({'at':t,'event':row.get('event',''), 'status':row.get('status',''),
+                                     'conclusion':row.get('conclusion'),
+                                     'actor':(row.get('actor') or {}).get('login','')})
+                  if created is None:
+                      # Never backfill an assumed operational history based on today's schedule.
+                      created=min((v['at'] for v in parsed),default=None)
+                  out={'workflow_file':wf,'cron_utc':cron,
+                       'first_observable_utc':iso(created) if created else None,
+                       'api_truncated':truncated,'periods':{}}
+                  for pname,delta in PERIODS.items():
+                      start=max(END-delta,created) if created else None
+                      if start is None or truncated:
+                          out['periods'][pname]={'status':'insufficient_history' if not truncated else 'incomplete_api_pagination'}
+                          continue
+                      selected=[r for r in parsed if start<=r['at']<END]
+                      scheduled=[r for r in selected if r['event']=='schedule']
+                      dispatched=[r for r in selected if r['event']=='workflow_dispatch']
+                      completed=[r for r in scheduled if r['status']=='completed']
+                      successes=sum(r['conclusion']=='success' for r in completed)
+                      planned=expected_slots(start,END,minutes,hours)
+                      n=len(scheduled)
+                      span_hours=round((END-start).total_seconds()/3600,1)
+                      out['periods'][pname]={
+                          'status':'ok' if planned else 'not_yet_expected',
+                          'observed_from_utc':iso(start),'observable_hours':span_hours,
+                          'expected_scheduled_runs':planned,'observed_scheduled_runs':n,
+                          'scheduled_start_coverage_pct': round(100*n/planned,2) if planned else None,
+                          'scheduled_completed_runs':len(completed),
+                          'scheduled_successful_runs':successes,
+                          'scheduled_failed_runs':sum(r['conclusion']=='failure' for r in completed),
+                          'scheduled_other_completed':len(completed)-successes-sum(r['conclusion']=='failure' for r in completed),
+                          'scheduled_success_rate_pct':round(100*successes/len(completed),2) if completed else None,
+                          'manual_or_recovery_dispatches':len(dispatched),
+                          'successful_dispatches':sum(r['conclusion']=='success' for r in dispatched),
+                          'dispatches_by_bot':sum(r['actor'] in ('github-actions[bot]','github-actions') for r in dispatched),
+                      }
+                  report['workflows'][friendly]=out
+                  if truncated: report['alerts'].append(wf+': API pagination cap reached; do not trust 30d statistics')
+              report['latest_data']['VPVR']=load_latest_file('data/volume_profile_summary.json','generated_utc',36*60)
+              report['latest_data']['VPVR_underlying_archive']=load_latest_file('data/volume_profile_summary.json','data_end_utc_exclusive',120*60)
+              report['latest_data']['Spot']=load_latest_file('data/market_flow_latest.json','collected_utc',90)
+              report['latest_data']['Derivatives']=load_latest_file('data/coinalyze_derivatives_latest.json','generated_utc',90)
+              for key,v in report['latest_data'].items():
+                  if v['status']!='fresh': report['alerts'].append(key+' data is '+v['status'])
+              for friendly,w in report['workflows'].items():
+                  v=w['periods'].get('24h',{})
+                  if v.get('status')=='ok' and v['expected_scheduled_runs']>=4 and v['scheduled_start_coverage_pct']<75:
+                      report['alerts'].append(f'{friendly}: recent scheduled-start coverage below 75%')
+              return report
+          
+          
+          def main():
+              r=calc()
+              p=Path('data/reliability_stats.json');p.parent.mkdir(exist_ok=True,parents=True)
+              p.write_text(json.dumps(r,indent=2,ensure_ascii=False)+'\n',encoding='utf8')
+              day=ASOF.strftime('%Y-%m-%d')
+              h=Path('data/reliability_daily')/(day+'.json')
+              h.parent.mkdir(exist_ok=True,parents=True)
+              h.write_text(json.dumps(r,indent=2,ensure_ascii=False)+'\n',encoding='utf8')
+              print('Observation cutoff UTC:',r['analysis_cutoff_utc'])
+              for name,data in r['workflows'].items():
+                  print('\n'+name, f'cron={data["cron_utc"]}')
+                  for period,stats in data['periods'].items():
+                      if stats.get('status')!='ok':print(f'  {period}: {stats["status"]}');continue
+                      print(f'  {period}: {stats["observed_scheduled_runs"]}/{stats["expected_scheduled_runs"]} '
+                            f'starts ({stats["scheduled_start_coverage_pct"]}%), '
+                            f'{stats["scheduled_successful_runs"]}/{stats["scheduled_completed_runs"]} finished successes '
+                            f'({stats["scheduled_success_rate_pct"]}%), dispatches {stats["manual_or_recovery_dispatches"]}')
+              print('\nData freshness: '+json.dumps(r['latest_data']))
+              if r['alerts']:print('WARNINGS: '+ '; '.join(r['alerts']))
+              else:print('No freshness or coverage alerts in this snapshot')
+              if os.environ.get('GITHUB_STEP_SUMMARY'):
+                  with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+                      f.write('# BTC ETH collection reliability\n')
+                      f.write(f'Observed at {r["generated_utc"]}; counts end {r["analysis_cutoff_utc"]}\n\n')
+                      f.write('| Collector | 24h scheduled observed / expected | Successful / completed | Note |\n|---|---:|---:|---|\n')
+                      for name,w in r['workflows'].items():
+                          x=w['periods']['24h']
+                          if x.get('status')!='ok':
+                              f.write(f'| {name} | n/a | n/a | {x["status"]} |\n')
+                          else:
+                              f.write(f'| {name} | {x["observed_scheduled_runs"]}/{x["expected_scheduled_runs"]} | '
+                                      f'{x["scheduled_successful_runs"]}/{x["scheduled_completed_runs"]} | '
+                                      f'{x["observable_hours"]} hours observed |\n')
+                      f.write('\n### Alerts\n')
+                      for a in r['alerts'] or ['None detected in current snapshot']:
+                          f.write('- '+a+'\n')
+                      f.write('\n_Started-run coverage is approximate, not proof of every cron triggering; recent 90 minutes are excluded._\n')
+              # Warnings are retained in output; fail only if the analysis itself cannot be performed.
+          
+          
+          if __name__=='__main__':main()
+          PY_METRICS
+          python /tmp/metrics.py
+
+      - name: Save stats to repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/reliability_stats.json data/reliability_daily/
+          if ! git diff --cached --quiet; then
+            git commit -m "Update BTC ETH collection reliability statistics"
+            for attempt in 1 2 3; do
+              git fetch origin main
+              git rebase origin/main
+              if git push origin HEAD:main; then exit 0; fi
+              sleep 3
+            done
+            exit 1
+          fi
