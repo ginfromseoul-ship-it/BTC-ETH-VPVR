@@ -1,12 +1,14 @@
 name: BTC ETH Historical OI Funding 12-24 Months
-# OI_EXTENDED_VERSION: 2026-10-23-v1
+# OI_EXTENDED_VERSION: 2026-10-23-v2
 # Safe wrapper around the validated historical_derivatives.yml importer.
+# Narrow, explicit quarantine for unverified 2026-01-04 ETH OI timestamp data.
+# Never fabricate OI or relax the original timing verification thresholds.
 
 on:
   workflow_dispatch:
     inputs:
       scope:
-        description: 'Start with 12_months. Use 24_months only after validation.'
+        description: '12_months: complete backfill with audited ETH Jan 4 quarantine. Validate before 24_months.'
         required: true
         type: choice
         default: 12_months
@@ -63,9 +65,31 @@ jobs:
           if script.count(before_msg) != 1:
               raise RuntimeError('Scope validation changed; abort safely')
           script = script.replace(before_msg, 'scope must be pilot/1_month/3_months/6_months/12_months/24_months')
+
+          # Explicitly quarantine a single vendor OI file with unverified
+          # observation-time alignment. No threshold relaxation or imputation.
+          before_quarantine = ("                else:\n"
+                               "                    report['failures'].append({'source':str(task),'error':type(ex).__name__+': '+message[:230]})\n"
+                               "                    print('FAIL',task,message[:200],file=sys.stderr,flush=True)")
+          after_quarantine = ("                elif (kind == 'oi' and s == 'ETH' and period == date(2026,1,4)\n"
+                              "                      and 'timestamp label mode=start cannot be proven by futures taker ratios' in message):\n"
+                              "                    report['source_quality_gaps'].append({\n"
+                              "                        'symbol':s, 'period':period.isoformat(), 'kind':'oi',\n"
+                              "                        'reason':'Observation timestamp not independently proven',\n"
+                              "                        'quarantined_observations':288,\n"
+                              "                        'original_validation_error':message[:700],\n"
+                              "                        'action':'Quarantined full-day ETH OI, no timestamps guessed, no zeros or interpolation'\n"
+                              "                    })\n"
+                              "                    print('QUARANTINED_UNVERIFIED_OI_TIMESTAMP',kind,s,period,flush=True)\n"
+                              "                else:\n"
+                              "                    report['failures'].append({'source':str(task),'error':type(ex).__name__+': '+message[:230]})\n"
+                              "                    print('FAIL',task,message[:200],file=sys.stderr,flush=True)")
+          if script.count(before_quarantine) != 1:
+              raise RuntimeError('Expected exact OI error handler missing; abort safely')
+          script = script.replace(before_quarantine,after_quarantine)
           compile(script, '/tmp/historical_derivatives_import.py', 'exec')
           Path('/tmp/historical_derivatives_import.py').write_text(script, encoding='utf8')
-          print('Validated original parser, OI timestamp checks and settlement funding logic retained')
+          print('Parser retained; only ETH 2026-01-04 unverified OI quarantined with explicit gap audit')
           PY
 
       - name: Import checksum-verified Binance OI and actual settled funding
