@@ -1,0 +1,118 @@
+name: BTC ETH Historical OI Funding 12-24 Months
+# OI_EXTENDED_VERSION: 2026-10-23-v1
+# Safe wrapper around the validated historical_derivatives.yml importer.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'Start with 12_months. Use 24_months only after validation.'
+        required: true
+        type: choice
+        default: 12_months
+        options:
+          - 12_months
+          - 24_months
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: btc-eth-historical-derivatives-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SCOPE: ${{ inputs.scope }}
+    steps:
+      - name: Check out existing archive and verified importer
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Extend allowed periods without changing original import logic
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+          original = Path('.github/workflows/historical_derivatives.yml').read_text(encoding='utf8')
+          if '# OI_FIX_VERSION: 2026-10-23-v3' not in original:
+              raise RuntimeError('Expected validated OI importer v3; abort rather than using unknown code')
+          start = "cat > /tmp/historical_derivatives_import.py <<'PY_DERIVATIVE_IMPORT'\n"
+          end = '\n          PY_DERIVATIVE_IMPORT'
+          if original.count(start) != 1 or original.count(end) != 1:
+              raise RuntimeError('Original workflow code boundaries changed; abort safely')
+          script = dedent(original.split(start, 1)[1].split(end, 1)[0]) + '\n'
+          before = "n={'1_month':1,'3_months':3,'6_months':6}.get(scope)"
+          after = "n={'1_month':1,'3_months':3,'6_months':6,'12_months':12,'24_months':24}.get(scope)"
+          if script.count(before) != 1:
+              raise RuntimeError('Expected exact selection code missing; abort safely')
+          script = script.replace(before, after)
+          before_msg = "scope must be pilot/1_month/3_months/6_months"
+          if script.count(before_msg) != 1:
+              raise RuntimeError('Scope validation changed; abort safely')
+          script = script.replace(before_msg, 'scope must be pilot/1_month/3_months/6_months/12_months/24_months')
+          compile(script, '/tmp/historical_derivatives_import.py', 'exec')
+          Path('/tmp/historical_derivatives_import.py').write_text(script, encoding='utf8')
+          print('Validated original parser, OI timestamp checks and settlement funding logic retained')
+          PY
+
+      - name: Import checksum-verified Binance OI and actual settled funding
+        id: collect
+        continue-on-error: true
+        run: python /tmp/historical_derivatives_import.py
+
+      - name: Commit historical OI funding records and quality report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4; do
+            git add -A data/market_archive data/historical_derivatives_report.json
+            if git diff --cached --quiet; then
+              echo 'No new observations to commit'
+              exit 0
+            fi
+            git commit -m "Expand BTC ETH audited OI/funding ($SCOPE)"
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              echo 'Historical derivatives committed successfully'
+              exit 0
+            fi
+            git rebase --abort || true
+            git reset --hard origin/main
+            echo "Re-importing on updated main due to concurrent changes ($attempt)" >&2
+            python /tmp/historical_derivatives_import.py || true
+            sleep "$((attempt * 2))"
+          done
+          echo 'Failed to persist OI / funding observations due to repeated Git conflicts' >&2
+          exit 1
+
+      - name: Rebuild research warehouse V2
+        if: steps.collect.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run warehouse_v2.yml --ref main
+          echo 'V2 rebuild requested. Verify its completion separately.'
+
+      - name: Fail if source records were incomplete
+        if: steps.collect.outcome == 'failure'
+        run: |
+          echo 'Some vendor archives failed. Inspect data/historical_derivatives_report.json for details.' >&2
+          exit 1
