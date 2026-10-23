@@ -1,0 +1,147 @@
+{
+  "generated_utc": "2026-10-23T07:19:22Z",
+  "schema_version": 2,
+  "status": "ready_with_source_gaps",
+  "database_export": "GitHub Actions artifact btc-eth-market-research-v2, 30 day retention",
+  "guard_seconds": 300,
+  "guard_warning": "Historical timestamp assumed available after +5m. This is not independently measured: verify archived release timings before trusting trading signals.",
+  "missingness_policy": "Missing Binance OI stays NULL. Never carry forward missing 5m OI, and do not substitute Coinalyze OI; actual funding stays separate from provider estimate.",
+  "source_time_semantics": "Binance OI t is observation end; Binance funding t is settlement event time; research row end_t is decision-candle close.",
+  "backtest_limit": "No historical liquidation orderbook reconstruction; exchange corrections and vendor publication lag not independently audited.",
+  "source_files": 412,
+  "source_sha256": "2b67827c7dfab1cf9464ce1919a2f0eae090b7f525e7feadc0895a01f143bf0d",
+  "coverage": {
+    "BTC": {
+      "spot_5m": {
+        "observed": 59101,
+        "first_utc": "2026-04-01T00:00:00Z",
+        "last_utc": "2026-10-23T05:00:00Z",
+        "expected_in_observed_span": 59101,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0
+      },
+      "futures_5m": {
+        "observed": 59101,
+        "first_utc": "2026-04-01T00:00:00Z",
+        "last_utc": "2026-10-23T05:00:00Z",
+        "expected_in_observed_span": 59101,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0
+      },
+      "oi_15m": {
+        "observed": 197,
+        "first_utc": "2026-10-21T03:45:00Z",
+        "last_utc": "2026-10-23T04:45:00Z"
+      },
+      "liquidations_15m": {
+        "observed": 172,
+        "first_utc": "2026-10-21T04:30:00Z",
+        "last_utc": "2026-10-23T04:45:00Z"
+      },
+      "liquidations_1h": {
+        "observed": 49,
+        "first_utc": "2026-10-21T04:00:00Z",
+        "last_utc": "2026-10-23T04:00:00Z"
+      },
+      "funding_1h": {
+        "observed": 49,
+        "first_utc": "2026-10-21T04:00:00Z",
+        "last_utc": "2026-10-23T04:00:00Z"
+      },
+      "binance_oi_5m": {
+        "observed": 59026,
+        "first_utc": "2026-04-01T00:05:00Z",
+        "last_utc": "2026-10-23T00:00:00Z",
+        "expected_in_observed_span": 59040,
+        "missing_in_span": 14,
+        "coverage_pct": 99.9763
+      },
+      "binance_funding_settlements": {
+        "observed": 549,
+        "first_utc": "2026-04-01T00:00:00Z",
+        "last_utc": "2026-09-30T16:00:00Z"
+      }
+    },
+    "ETH": {
+      "spot_5m": {
+        "observed": 59101,
+        "first_utc": "2026-04-01T00:00:00Z",
+        "last_utc": "2026-10-23T05:00:00Z",
+        "expected_in_observed_span": 59101,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0
+      },
+      "futures_5m": {
+        "observed": 59101,
+        "first_utc": "2026-04-01T00:00:00Z",
+        "last_utc": "2026-10-23T05:00:00Z",
+        "expected_in_observed_span": 59101,
+        "missing_in_span": 0,
+        "coverage_pct": 100.0
+      },
+      "oi_15m": {
+        "observed": 197,
+        "first_utc": "2026-10-21T03:45:00Z",
+        "last_utc": "2026-10-23T04:45:00Z"
+      },
+      "liquidations_15m": {
+        "observed": 180,
+        "first_utc": "2026-10-21T03:45:00Z",
+        "last_utc": "2026-10-23T04:45:00Z"
+      },
+      "liquidations_1h": {
+        "observed": 49,
+        "first_utc": "2026-10-21T04:00:00Z",
+        "last_utc": "2026-10-23T04:00:00Z"
+      },
+      "funding_1h": {
+        "observed": 49,
+        "first_utc": "2026-10-21T04:00:00Z",
+        "last_utc": "2026-10-23T04:00:00Z"
+      },
+      "binance_oi_5m": {
+        "observed": 59021,
+        "first_utc": "2026-04-01T00:05:00Z",
+        "last_utc": "2026-10-23T00:00:00Z",
+        "expected_in_observed_span": 59040,
+        "missing_in_span": 19,
+        "coverage_pct": 99.9678
+      },
+      "binance_funding_settlements": {
+        "observed": 549,
+        "first_utc": "2026-04-01T00:00:00Z",
+        "last_utc": "2026-09-30T16:00:00Z"
+      }
+    }
+  },
+  "table_counts": {
+    "BTC": {
+      "spot_5m": 59101,
+      "futures_5m": 59101,
+      "oi_15m": 197,
+      "liquidations_15m": 172,
+      "liquidations_1h": 49,
+      "funding_1h": 49,
+      "binance_oi_5m": 59026,
+      "binance_funding_settlements": 549,
+      "research_5m": 59101,
+      "research_5m_with_binance_oi": 59026,
+      "research_5m_with_actual_funding": 53184
+    },
+    "ETH": {
+      "spot_5m": 59101,
+      "futures_5m": 59101,
+      "oi_15m": 197,
+      "liquidations_15m": 180,
+      "liquidations_1h": 49,
+      "funding_1h": 49,
+      "binance_oi_5m": 59021,
+      "binance_funding_settlements": 549,
+      "research_5m": 59101,
+      "research_5m_with_binance_oi": 59021,
+      "research_5m_with_actual_funding": 53184
+    }
+  },
+  "sqlite_bytes": 53403648,
+  "sqlite_sha256": "a3cbbd5de2a0964db13e709177292fca21f1f245a9b8db13b0c291a68a791c56"
+}
