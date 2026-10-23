@@ -1,6 +1,6 @@
 {
-  "generated_utc": "2026-10-23T08:56:56Z",
-  "status": "partial",
+  "generated_utc": "2026-10-23T09:15:34Z",
+  "status": "complete_with_gaps",
   "scope": "12_months",
   "total_source_zips": 798,
   "completed_source_zips": 797,
@@ -22157,14 +22157,18 @@
       "conflicts": 0
     }
   ],
-  "failures": [
-    {
-      "source": "('oi', 'ETH', datetime.date(2026, 1, 4))",
-      "error": "ValueError: 2026-01-04 ETH timestamp label mode=start cannot be proven by futures taker ratios: {'start': {'samples': 288, 'median_absolute_log_error': 0.089801}, 'end': {'samples': 288, 'median_absolute_log_error': 0.4232798}}"
-    }
-  ],
+  "failures": [],
   "pending_sources": [],
   "source_quality_gaps": [
+    {
+      "symbol": "ETH",
+      "period": "2026-01-04",
+      "kind": "oi",
+      "reason": "Observation timestamp not independently proven",
+      "quarantined_observations": 288,
+      "original_validation_error": "2026-01-04 ETH timestamp label mode=start cannot be proven by futures taker ratios: {'start': {'samples': 288, 'median_absolute_log_error': 0.089801}, 'end': {'samples': 288, 'median_absolute_log_error': 0.4232798}}",
+      "action": "Quarantined full-day ETH OI, no timestamps guessed, no zeros or interpolation"
+    },
     {
       "symbol": "ETH",
       "period": "2026-10-15",
