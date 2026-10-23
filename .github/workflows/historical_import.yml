@@ -1,0 +1,340 @@
+name: BTC ETH Extended Historical Import
+
+on:
+  workflow_dispatch:
+    inputs:
+      months:
+        description: 'Completed UTC months to import (first test 1 month)'
+        type: choice
+        required: true
+        default: '1'
+        options:
+          - '1'
+          - '3'
+          - '6'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: btc-eth-historical-monthly-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      MONTHS: ${{ inputs.months || '1' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download checksum-verified Binance public candle archives, merge safely
+        id: historical_import
+        continue-on-error: true
+        shell: bash
+        run: |
+          cat > /tmp/historical_import.py <<'PY_HISTORY'
+          #!/usr/bin/env python3
+          """One-off Binance Vision BTC/ETH spot+USD-M 5m candle history to existing archive schema.
+
+          Only completed monthly/daily ZIPs and their published .CHECKSUM. Does not synthesize OI,
+          liquidations, or settled funding. Existing archives are preserved; duplicates are left intact.
+          """
+          import csv, gzip, hashlib, io, json, math, os, re, sys, time, zipfile
+          from collections import defaultdict
+          from datetime import datetime, date, timedelta, timezone
+          from pathlib import Path
+          from urllib.error import HTTPError,URLError
+          from urllib.request import Request,urlopen
+
+          UTC=timezone.utc
+          SYMBOLS=('BTC','ETH')
+          ROOT=Path('data/market_archive')
+          STATUS=Path('data/historical_import_report.json')
+          CACHE=Path('/tmp/btc_eth_vision_cache')
+          BASE='https://data.binance.vision/data'
+          ALL_SERIES=('spot_5m','futures_5m','oi_15m','liquidations_15m','liquidations_1h','funding_1h')
+          SOURCES={'spot_5m':'Binance Spot OHLCV','futures_5m':'Binance USD-M perpetual OHLCV',
+                   'oi_15m':'Coinalyze native OI','liquidations_15m':'Coinalyze reported USD liquidation bins',
+                   'liquidations_1h':'Coinalyze reported USD liquidation hourly bins',
+                   'funding_1h':'Coinalyze raw funding rate hourly OHLC'}
+
+
+          def utc_s(ts):return datetime.fromtimestamp(ts,UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+          def fetch(url,max_bytes=20_000_000):
+              CACHE.mkdir(parents=True,exist_ok=True)
+              key=hashlib.sha256(url.encode()).hexdigest()
+              f=CACHE/key
+              if f.exists():return f.read_bytes()
+              error=None
+              for attempt in range(3):
+                  try:
+                      with urlopen(Request(url,headers={'User-Agent':'BTC-ETH-Historical-Research/1.0'}),timeout=50) as r:
+                          data=r.read(max_bytes+1)
+                      if len(data)>max_bytes:raise ValueError('download too large')
+                      f.write_bytes(data)
+                      return data
+                  except HTTPError as exc:
+                      error=f'HTTP {exc.code}: {url}'
+                      if exc.code==404:break
+                  except (URLError,TimeoutError,OSError,ValueError) as exc:error=f'{type(exc).__name__}: {str(exc)[:120]}'
+                  if attempt<2:time.sleep(1+attempt*2)
+              raise RuntimeError(error or 'download failed')
+
+
+          def verified_zip(url):
+              data=fetch(url)
+              ck=fetch(url+'.CHECKSUM',max_bytes=1500).decode('utf8','replace')
+              m=re.search(r'\b([0-9a-fA-F]{64})\b',ck)
+              if not m:raise ValueError(f'invalid SHA256 checksum: {url}')
+              actual=hashlib.sha256(data).hexdigest()
+              if actual.lower()!=m.group(1).lower():raise ValueError(f'SHA256 mismatch: {url}')
+              if not data[:2]==b'PK':raise ValueError('not a ZIP')
+              with zipfile.ZipFile(io.BytesIO(data)) as f:
+                  filenames=[n for n in f.namelist() if n.lower().endswith('.csv') and '..' not in n]
+                  if len(filenames)!=1:raise ValueError('expected one CSV inside ZIP')
+                  with f.open(filenames[0]) as handle:
+                      text=io.TextIOWrapper(handle,encoding='utf-8-sig',newline='')
+                      yield from csv.reader(text)
+
+
+          def ts_s(s):
+              n=int(str(s).strip())
+              # Binance spot archives use microseconds since Jan 2025. Futures use milliseconds.
+              t=n//1_000_000 if n>=10**15 else n//1000
+              if t<=0 or t%300:raise ValueError(f'bad UTC candle timestamp {n}')
+              return t
+
+
+          def num(x,nonnegative=False):
+              f=float(x)
+              if not math.isfinite(f) or (nonnegative and f<0):raise ValueError('invalid numeric')
+              return f
+
+
+          def parse(rows,series,start,end):
+              out={};headers=0
+              for fields in rows:
+                  if not fields:continue
+                  if str(fields[0]).lstrip('\ufeff').strip().lower() in ('open_time','opentime','timestamp'):
+                      headers+=1;continue
+                  if len(fields)<11:raise ValueError('wrong Binance kline column count')
+                  t=ts_s(fields[0])
+                  if not start<=t<end:continue
+                  if t in out:raise ValueError(f'duplicate candle in source at {utc_s(t)}')
+                  o,h,l,c=(num(fields[k],True) for k in (1,2,3,4))
+                  if min(o,h,l,c)<=0 or h<max(o,c,l) or l>min(o,c,h):raise ValueError('OHLC corrupted')
+                  vol=num(fields[5],True);q=num(fields[7],True)
+                  buy=num(fields[9],True);buyq=num(fields[10],True)
+                  if buy>vol*(1+1e-7) or buyq>q*(1+1e-7):raise ValueError('buyer volume above total')
+                  if series=='spot_5m':
+                      row={'t':t,'o':o,'h':h,'l':l,'c':c,'v_base':vol,'v_quote_usdt':q,
+                           'buy_base':buy,'buy_quote_usdt':buyq,'sell_quote_usdt':max(0,q-buyq)}
+                  else:
+                      row={'t':t,'o':o,'h':h,'l':l,'c':c,'v_native':vol,'buy_native':buy,'sell_native':max(0,vol-buy)}
+                  out[t]=row
+              expected=(end-start)//300
+              missing=expected-len(out)
+              if missing:
+                  seen=set(out)
+                  samples=[utc_s(x) for x in range(start,end,300) if x not in seen][:6]
+                  raise ValueError(f'{series}: missing {missing}/{expected} candles, example {samples}')
+              return out
+
+
+          def source_url(venue,symbol,kind,label):
+              prefix='spot' if venue=='spot' else 'futures/um'
+              part='monthly' if kind=='month' else 'daily'
+              return f'{BASE}/{prefix}/{part}/klines/{symbol}USDT/5m/{symbol}USDT-5m-{label}.zip'
+
+
+          def month_before(ym):
+              y,m=ym.year,ym.month
+              return date(y-1,12,1) if m==1 else date(y,m-1,1)
+
+
+          def next_month(ym):
+              y,m=ym.year,ym.month
+              return date(y+1,1,1) if m==12 else date(y,m+1,1)
+
+
+          def collect_period(kind,label,dt_start,dt_end):
+              a=int(datetime.combine(dt_start,datetime.min.time(),tzinfo=UTC).timestamp())
+              b=int(datetime.combine(dt_end,datetime.min.time(),tzinfo=UTC).timestamp())
+              result={s:{} for s in SYMBOLS}
+              for symbol in SYMBOLS:
+                  for venue,series in [('spot','spot_5m'),('um','futures_5m')]:
+                      url=source_url(venue,symbol,kind,label)
+                      result[symbol][series]=parse(verified_zip(url),series,a,b)
+              return result
+
+
+          def existing_earliest_day():
+              sets=[]
+              for symbol in SYMBOLS:
+                  days={p.parent.name for p in ROOT.glob('????-??-??/'+symbol+'.json.gz')}
+                  if not days:raise ValueError('existing live archives required before historical backfill')
+                  sets.append(min(days))
+              return date.fromisoformat(max(sets))  # first day with both asset archives
+
+
+          def empty_doc(symbol,day):
+              return {'schema_version':1,'symbol':symbol,'utc_day':day,
+                      'time_key':'t (UTC Unix seconds, start of closed vendor bucket)',
+                      'sources':SOURCES.copy(),'series':{x:[] for x in ALL_SERIES}}
+
+
+          def archive_read(symbol,day):
+              path=ROOT/day/(symbol+'.json.gz')
+              if not path.exists():return empty_doc(symbol,day),path
+              doc=json.loads(gzip.decompress(path.read_bytes()))
+              if doc.get('schema_version')!=1 or doc.get('symbol')!=symbol or doc.get('utc_day')!=day:
+                  raise ValueError(f'existing archive incompatible: {path}')
+              if not isinstance(doc.get('series'),dict) or any(not isinstance(doc['series'].get(x),list) for x in ALL_SERIES):
+                  raise ValueError(f'bad existing series {path}')
+              return doc,path
+
+
+          def atomic_save(doc,path):
+              data=(json.dumps(doc,sort_keys=True,ensure_ascii=False,separators=(',',':'),allow_nan=False)+'\n').encode()
+              compressed=gzip.compress(data,compresslevel=7,mtime=0)
+              if path.exists() and path.read_bytes()==compressed:return False
+              path.parent.mkdir(parents=True,exist_ok=True)
+              tmp=path.with_suffix('.gz.partial')
+              tmp.write_bytes(compressed)
+              tmp.replace(path)
+              return True
+
+
+          def commit_period(per):
+              per_day=defaultdict(lambda:defaultdict(lambda:defaultdict(dict)))
+              for symbol,sers in per.items():
+                  for series,values in sers.items():
+                      for t,v in values.items():
+                          day=datetime.fromtimestamp(t,UTC).date().isoformat()
+                          per_day[day][symbol][series][t]=v
+              changed=added=overlap_diff=0
+              for day,syms in sorted(per_day.items()):
+                  for symbol,series_dict in syms.items():
+                      doc,path=archive_read(symbol,day)
+                      for series,vals in series_dict.items():
+                          prior={r['t']:r for r in doc['series'][series]}
+                          for t,row in vals.items():
+                              if t not in prior:prior[t]=row;added+=1
+                              elif prior[t]!=row:overlap_diff+=1
+                              # Keep already-captured contemporaneous data; don't revise it silently.
+                          doc['series'][series]=[prior[t] for t in sorted(prior)]
+                      changed+=int(atomic_save(doc,path))
+              return {'day_files_changed':changed,'new_candles':added,'overlapping_disagreements_preserved':overlap_diff}
+
+
+          def main():
+              n=int(os.environ.get('MONTHS','1'))
+              if n not in (1,3,6):raise ValueError('MONTHS must be 1,3,6')
+              now=datetime.now(UTC)
+              current=date(now.year,now.month,1)
+              first_month=current
+              for i in range(n):first_month=month_before(first_month)
+              oldest=existing_earliest_day()
+              # Monthly completed periods, most recent first (e.g. Sep 2026, Aug, Jul).
+              months=[];m=month_before(current)
+              while m>=first_month:
+                  months.append((m,next_month(m)))
+                  m=month_before(m)
+              # Current incomplete month: fill daily ZIPs from month start through the first
+              # previously recorded UTC day, inclusive (fills missing beginning of that day).
+              days=[]
+              if oldest>=current:
+                  last=min(oldest,(now-timedelta(days=1)).date())
+                  d=current
+                  while d<=last:
+                      days.append((d,d+timedelta(days=1)))
+                      d+=timedelta(days=1)
+              report={'generated_utc':utc_s(int(now.timestamp())),'status':'running',
+                      'months_requested':n,'source':'Binance Vision monthly and daily klines ZIP with SHA256 checksums',
+                      'periods_completed':[],'errors':[],
+                      'historical_oi_status':'not imported; Binance futures daily metrics need a separate time-convention audit',
+                      'historical_liquidations_status':'not imported; missing historical bins remain unknown',
+                      'funding_status':'not imported for historical months',
+                      'data_lineage':{'spot_5m':'Binance Spot exchange-provided kline taker buy quote, microseconds from 2025',
+                                      'futures_5m':'Binance USD-M exchange-provided kline taker buy base (underlying units)'},
+                      'warnings':['Older intervals have spot and futures CVD but may lack OI/liquidation/funding.',
+                                  'The present SQLite 5m research view may contain NULL OI in historical months.',
+                                  'Publication lag and vendor revisions still require point-in-time study.']}
+              # Import complete calendar months before touching partial month data.
+              tasks=[('month',str(a)[:7],a,b) for a,b in reversed(months)] + [('day',str(a),a,b) for a,b in days]
+              changed=added=conflicts=0
+              for i,(kind,label,a,b) in enumerate(tasks,1):
+                  print(f'IMPORT {i}/{len(tasks)} {kind} {label}',flush=True)
+                  try:
+                      period=collect_period(kind,label,a,b)
+                      result=commit_period(period)
+                      changed+=result['day_files_changed'];added+=result['new_candles'];conflicts+=result['overlapping_disagreements_preserved']
+                      report['periods_completed'].append({'period':label,'type':kind,**result})
+                  except Exception as exc:
+                      report['errors'].append({'period':label,'type':kind,'error':f'{type(exc).__name__}: {str(exc)[:360]}'})
+                      print('FAILED '+label+' '+str(exc)[:300],file=sys.stderr,flush=True)
+                      # Do not treat incomplete periods as successful, continue to maximize progress.
+              report.update({'status':'complete' if not report['errors'] else 'partial',
+                             'period_count':len(tasks),'completed_count':len(report['periods_completed']),
+                             'new_candles':added,'day_files_changed':changed,
+                             'overlapping_disagreements_preserved':conflicts,
+                             'coverage_rule':'All 288 five-minute bars per UTC day for each spot/futures asset; fail closed on missing series.'})
+              STATUS.parent.mkdir(parents=True,exist_ok=True)
+              STATUS.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf8')
+              print('HISTORICAL IMPORT RESULT',report['status'],'candles=',added,'files=',changed,'errors=',len(report['errors']))
+              return 0 if not report['errors'] else 1
+
+          if __name__=='__main__':sys.exit(main())
+          PY_HISTORY
+          python /tmp/historical_import.py
+
+      - name: Save source rows and historical import report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4; do
+            git add -A data/market_archive data/historical_import_report.json
+            if git diff --cached --quiet; then
+              echo 'No new candle records to save'
+              exit 0
+            fi
+            git commit -m 'Import older BTC ETH Binance 5m candles with verified checksums'
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              echo 'Historical candle archives saved'
+              exit 0
+            fi
+            echo "Git branch moved during upload; restarting on newest snapshot (attempt $attempt)" >&2
+            git rebase --abort || true
+            git reset --hard origin/main
+            python /tmp/historical_import.py || true
+            sleep $((attempt * 2))
+          done
+          echo 'Could not save historical data due to persistent Git conflicts' >&2
+          exit 1
+
+      - name: Rebuild research database from new history
+        if: steps.historical_import.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh workflow run market_database.yml --ref main
+
+      - name: Flag partial/unavailable historical archives
+        if: steps.historical_import.outcome == 'failure'
+        run: |
+          echo 'Check data/historical_import_report.json for exact missing ZIP/checksum dates'
+          exit 1
