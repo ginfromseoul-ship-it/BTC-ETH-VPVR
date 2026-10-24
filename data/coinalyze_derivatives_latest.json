@@ -1,5 +1,5 @@
 {
-  "generated_utc": "2026-10-24T22:00:22Z",
+  "generated_utc": "2026-10-24T22:29:30Z",
   "source": "Coinalyze public market data API",
   "docs": "https://api.coinalyze.net/v1/doc/",
   "note": "Venue-specific Binance USDT perpetuals. No cross-exchange aggregation.",
@@ -12,7 +12,7 @@
       "oi_liquidation_volume_denomination": "BASE_ASSET",
       "quality": {
         "open_interest": "ok",
-        "liquidations": "partial",
+        "liquidations": "ok",
         "futures_flow": "ok",
         "funding": "ok"
       },
@@ -23,79 +23,82 @@
         "changes": {
           "1h": {
             "status": "ok",
-            "start_utc": "2026-10-24T21:00:00Z",
-            "native_units_delta": -37.1,
-            "native_units_pct": -0.0388,
-            "usd_notional_delta": 4646414.37,
-            "usd_notional_pct": 0.0604,
+            "start_utc": "2026-10-24T21:15:00Z",
+            "native_units_delta": -66.19,
+            "native_units_pct": -0.0691,
+            "usd_notional_delta": -1851262.03,
+            "usd_notional_pct": -0.024,
             "note": "USD OI moves with price and position count; not all change is new leverage"
           },
           "4h": {
             "status": "ok",
-            "start_utc": "2026-10-24T18:00:00Z",
-            "native_units_delta": -308.559,
-            "native_units_pct": -0.3214,
-            "usd_notional_delta": -17740580.95,
-            "usd_notional_pct": -0.2301,
+            "start_utc": "2026-10-24T18:15:00Z",
+            "native_units_delta": -260.22,
+            "native_units_pct": -0.2713,
+            "usd_notional_delta": -10954242.41,
+            "usd_notional_pct": -0.1421,
             "note": "USD OI moves with price and position count; not all change is new leverage"
           },
           "24h": {
             "status": "ok",
-            "start_utc": "2026-10-23T22:00:00Z",
-            "native_units_delta": 3502.564,
-            "native_units_pct": 3.7997,
-            "usd_notional_delta": 197858489.61,
-            "usd_notional_pct": 2.6401,
+            "start_utc": "2026-10-23T22:15:00Z",
+            "native_units_delta": 3446.146,
+            "native_units_pct": 3.7367,
+            "usd_notional_delta": 200995578.36,
+            "usd_notional_pct": 2.6807,
             "note": "USD OI moves with price and position count; not all change is new leverage"
           }
         },
         "source": "Coinalyze Binance USDT perpetual open-interest-history",
-        "history_asof_utc": "2026-10-24T22:00:00Z",
-        "last_history_open_interest_native": 95683.73,
-        "last_history_open_interest_usd": 7692187285.414,
-        "current_native": 95683.73,
-        "current_usd": 7692464768.230999,
-        "current_asof_utc": "2026-10-24T22:00:21.897000Z"
+        "history_asof_utc": "2026-10-24T22:15:00Z",
+        "last_history_open_interest_native": 95669.516,
+        "last_history_open_interest_usd": 7698755559.358399,
+        "current_native": 95669.516,
+        "current_usd": 7698755559.358399,
+        "current_asof_utc": "2026-10-24T22:29:30.724000Z"
       },
       "liquidations": {
-        "status": "partial",
+        "status": "ok",
         "unit": "USD",
         "windows": {
           "1h": {
-            "status": "unavailable",
-            "reason": "No complete contiguous vendor liquidation bins, without zero imputation",
-            "checks": [
-              "15min: missing bins",
-              "1hour: latest complete bin too old"
-            ]
+            "status": "ok",
+            "start_utc": "2026-10-24T21:00:00Z",
+            "end_utc": "2026-10-24T22:00:00Z",
+            "source_interval": "1hour",
+            "age_seconds_at_collection": 1770,
+            "is_bucket_aligned": true,
+            "long_liquidations_usd": 300071.61,
+            "short_liquidations_usd": 1286.14,
+            "total_liquidations_usd": 301357.74
           },
           "4h": {
             "status": "ok",
-            "start_utc": "2026-10-24T16:00:00Z",
-            "end_utc": "2026-10-24T20:00:00Z",
-            "source_interval": "4hour",
-            "age_seconds_at_collection": 7222,
+            "start_utc": "2026-10-24T18:00:00Z",
+            "end_utc": "2026-10-24T22:00:00Z",
+            "source_interval": "1hour",
+            "age_seconds_at_collection": 1770,
             "is_bucket_aligned": true,
-            "long_liquidations_usd": 186498.63,
-            "short_liquidations_usd": 3424398.07,
-            "total_liquidations_usd": 3610896.7
+            "long_liquidations_usd": 301359.51,
+            "short_liquidations_usd": 1433278.04,
+            "total_liquidations_usd": 1734637.55
           },
           "24h": {
             "status": "ok",
-            "start_utc": "2026-10-23T20:00:00Z",
-            "end_utc": "2026-10-24T20:00:00Z",
-            "source_interval": "4hour",
-            "age_seconds_at_collection": 7222,
+            "start_utc": "2026-10-23T22:00:00Z",
+            "end_utc": "2026-10-24T22:00:00Z",
+            "source_interval": "1hour",
+            "age_seconds_at_collection": 1770,
             "is_bucket_aligned": true,
-            "long_liquidations_usd": 76811564.72,
-            "short_liquidations_usd": 5243904.95,
-            "total_liquidations_usd": 82055469.67
+            "long_liquidations_usd": 77128747.56,
+            "short_liquidations_usd": 5289599.61,
+            "total_liquidations_usd": 82418347.16
           }
         },
         "source": "Coinalyze reported Binance long/short liquidation aggregates",
         "method": "Vendor-native 15min/1hour/4hour/6hour closed UTC bins; no zero filling",
         "limitations": "Time windows are bucket-aligned, not necessarily rolling to request time. Vendor figures may omit some liquidations.",
-        "last_complete_data_utc": "2026-10-24T20:00:00Z"
+        "last_complete_data_utc": "2026-10-24T22:00:00Z"
       },
       "futures_flow": {
         "status": "ok",
@@ -104,44 +107,44 @@
         "windows": {
           "1h": {
             "status": "ok",
-            "start_utc": "2026-10-24T20:55:00Z",
-            "end_utc": "2026-10-24T21:55:00Z",
-            "taker_buy_native_volume": 1269.174,
-            "taker_sell_native_volume": 1292.244,
-            "cvd_delta_native_volume": -23.07,
-            "taker_buy_share_pct": 49.55,
+            "start_utc": "2026-10-24T21:25:00Z",
+            "end_utc": "2026-10-24T22:25:00Z",
+            "taker_buy_native_volume": 748.7,
+            "taker_sell_native_volume": 537.153,
+            "cvd_delta_native_volume": 211.547,
+            "taker_buy_share_pct": 58.226,
             "quote_usd_delta": null,
             "note": "Native trade volume, not automatically USD"
           },
           "4h": {
             "status": "ok",
-            "start_utc": "2026-10-24T17:55:00Z",
-            "end_utc": "2026-10-24T21:55:00Z",
-            "taker_buy_native_volume": 6051.259,
-            "taker_sell_native_volume": 4940.109,
-            "cvd_delta_native_volume": 1111.15,
-            "taker_buy_share_pct": 55.055,
+            "start_utc": "2026-10-24T18:25:00Z",
+            "end_utc": "2026-10-24T22:25:00Z",
+            "taker_buy_native_volume": 5588.377,
+            "taker_sell_native_volume": 4391.669,
+            "cvd_delta_native_volume": 1196.708,
+            "taker_buy_share_pct": 55.996,
             "quote_usd_delta": null,
             "note": "Native trade volume, not automatically USD"
           },
           "24h": {
             "status": "ok",
-            "start_utc": "2026-10-23T21:55:00Z",
-            "end_utc": "2026-10-24T21:55:00Z",
-            "taker_buy_native_volume": 57209.106,
-            "taker_sell_native_volume": 63932.366,
-            "cvd_delta_native_volume": -6723.26,
-            "taker_buy_share_pct": 47.225,
+            "start_utc": "2026-10-23T22:25:00Z",
+            "end_utc": "2026-10-24T22:25:00Z",
+            "taker_buy_native_volume": 57335.382,
+            "taker_sell_native_volume": 63753.045,
+            "cvd_delta_native_volume": -6417.663,
+            "taker_buy_share_pct": 47.35,
             "quote_usd_delta": null,
             "note": "Native trade volume, not automatically USD"
           }
         },
-        "last_complete_utc": "2026-10-24T21:55:00Z"
+        "last_complete_utc": "2026-10-24T22:25:00Z"
       },
       "funding": {
         "status": "ok",
         "value": 0.00096,
-        "updated_utc": "2026-10-24T22:00:22.856000Z"
+        "updated_utc": "2026-10-24T22:29:28.726000Z"
       }
     },
     "ETH": {
@@ -152,7 +155,7 @@
       "oi_liquidation_volume_denomination": "BASE_ASSET",
       "quality": {
         "open_interest": "ok",
-        "liquidations": "partial",
+        "liquidations": "ok",
         "futures_flow": "ok",
         "funding": "ok"
       },
@@ -163,58 +166,61 @@
         "changes": {
           "1h": {
             "status": "ok",
-            "start_utc": "2026-10-24T21:00:00Z",
-            "native_units_delta": -889.504,
-            "native_units_pct": -0.039,
-            "usd_notional_delta": 8102851.84,
-            "usd_notional_pct": 0.152,
+            "start_utc": "2026-10-24T21:15:00Z",
+            "native_units_delta": 1218.367,
+            "native_units_pct": 0.0534,
+            "usd_notional_delta": 7280159.11,
+            "usd_notional_pct": 0.1364,
             "note": "USD OI moves with price and position count; not all change is new leverage"
           },
           "4h": {
             "status": "ok",
-            "start_utc": "2026-10-24T18:00:00Z",
-            "native_units_delta": -24228.142,
-            "native_units_pct": -1.0504,
-            "usd_notional_delta": -23203449.32,
-            "usd_notional_pct": -0.4327,
+            "start_utc": "2026-10-24T18:15:00Z",
+            "native_units_delta": -20046.906,
+            "native_units_pct": -0.8703,
+            "usd_notional_delta": -28004573.59,
+            "usd_notional_pct": -0.5211,
             "note": "USD OI moves with price and position count; not all change is new leverage"
           },
           "24h": {
             "status": "ok",
-            "start_utc": "2026-10-23T22:00:00Z",
-            "native_units_delta": -35269.009,
-            "native_units_pct": -1.5217,
-            "usd_notional_delta": -214560166.73,
-            "usd_notional_pct": -3.8636,
+            "start_utc": "2026-10-23T22:15:00Z",
+            "native_units_delta": -34521.625,
+            "native_units_pct": -1.4893,
+            "usd_notional_delta": -203795890.56,
+            "usd_notional_pct": -3.6718,
             "note": "USD OI moves with price and position count; not all change is new leverage"
           }
         },
         "source": "Coinalyze Binance USDT perpetual open-interest-history",
-        "history_asof_utc": "2026-10-24T22:00:00Z",
-        "last_history_open_interest_native": 2282410.347,
-        "last_history_open_interest_usd": 5338854514.97811,
-        "current_native": 2282410.347,
-        "current_usd": 5338900163.18505,
-        "current_asof_utc": "2026-10-24T22:00:20.852000Z"
+        "history_asof_utc": "2026-10-24T22:15:00Z",
+        "last_history_open_interest_native": 2283390.377,
+        "last_history_open_interest_usd": 5346444398.226649,
+        "current_native": 2283390.377,
+        "current_usd": 5346421564.32288,
+        "current_asof_utc": "2026-10-24T22:29:28.721000Z"
       },
       "liquidations": {
-        "status": "partial",
+        "status": "ok",
         "unit": "USD",
         "windows": {
           "1h": {
-            "status": "unavailable",
-            "reason": "No complete contiguous vendor liquidation bins, without zero imputation",
-            "checks": [
-              "15min: missing bins",
-              "1hour: latest complete bin too old"
-            ]
+            "status": "ok",
+            "start_utc": "2026-10-24T21:15:00Z",
+            "end_utc": "2026-10-24T22:15:00Z",
+            "source_interval": "15min",
+            "age_seconds_at_collection": 870,
+            "is_bucket_aligned": true,
+            "long_liquidations_usd": 329.91,
+            "short_liquidations_usd": 67211.79,
+            "total_liquidations_usd": 67541.69
           },
           "4h": {
             "status": "ok",
             "start_utc": "2026-10-24T16:00:00Z",
             "end_utc": "2026-10-24T20:00:00Z",
             "source_interval": "4hour",
-            "age_seconds_at_collection": 7222,
+            "age_seconds_at_collection": 8970,
             "is_bucket_aligned": true,
             "long_liquidations_usd": 206746.21,
             "short_liquidations_usd": 2610337.87,
@@ -225,7 +231,7 @@
             "start_utc": "2026-10-23T20:00:00Z",
             "end_utc": "2026-10-24T20:00:00Z",
             "source_interval": "4hour",
-            "age_seconds_at_collection": 7222,
+            "age_seconds_at_collection": 8970,
             "is_bucket_aligned": true,
             "long_liquidations_usd": 78702788.7,
             "short_liquidations_usd": 3996725.26,
@@ -235,7 +241,7 @@
         "source": "Coinalyze reported Binance long/short liquidation aggregates",
         "method": "Vendor-native 15min/1hour/4hour/6hour closed UTC bins; no zero filling",
         "limitations": "Time windows are bucket-aligned, not necessarily rolling to request time. Vendor figures may omit some liquidations.",
-        "last_complete_data_utc": "2026-10-24T20:00:00Z"
+        "last_complete_data_utc": "2026-10-24T22:15:00Z"
       },
       "futures_flow": {
         "status": "ok",
@@ -244,48 +250,48 @@
         "windows": {
           "1h": {
             "status": "ok",
-            "start_utc": "2026-10-24T20:55:00Z",
-            "end_utc": "2026-10-24T21:55:00Z",
-            "taker_buy_native_volume": 25610.914,
-            "taker_sell_native_volume": 34849.121,
-            "cvd_delta_native_volume": -9238.207,
-            "taker_buy_share_pct": 42.36,
+            "start_utc": "2026-10-24T21:25:00Z",
+            "end_utc": "2026-10-24T22:25:00Z",
+            "taker_buy_native_volume": 16493.275,
+            "taker_sell_native_volume": 14939.477,
+            "cvd_delta_native_volume": 1553.798,
+            "taker_buy_share_pct": 52.472,
             "quote_usd_delta": null,
             "note": "Native trade volume, not automatically USD"
           },
           "4h": {
             "status": "ok",
-            "start_utc": "2026-10-24T17:55:00Z",
-            "end_utc": "2026-10-24T21:55:00Z",
-            "taker_buy_native_volume": 168707.014,
-            "taker_sell_native_volume": 146333.051,
-            "cvd_delta_native_volume": 22373.963,
-            "taker_buy_share_pct": 53.551,
+            "start_utc": "2026-10-24T18:25:00Z",
+            "end_utc": "2026-10-24T22:25:00Z",
+            "taker_buy_native_volume": 159687.954,
+            "taker_sell_native_volume": 136891.974,
+            "cvd_delta_native_volume": 22795.98,
+            "taker_buy_share_pct": 53.843,
             "quote_usd_delta": null,
             "note": "Native trade volume, not automatically USD"
           },
           "24h": {
             "status": "ok",
-            "start_utc": "2026-10-23T21:55:00Z",
-            "end_utc": "2026-10-24T21:55:00Z",
-            "taker_buy_native_volume": 1473360.666,
-            "taker_sell_native_volume": 1693164.395,
-            "cvd_delta_native_volume": -219803.729,
-            "taker_buy_share_pct": 46.529,
+            "start_utc": "2026-10-23T22:25:00Z",
+            "end_utc": "2026-10-24T22:25:00Z",
+            "taker_buy_native_volume": 1472476.001,
+            "taker_sell_native_volume": 1690415.746,
+            "cvd_delta_native_volume": -217939.745,
+            "taker_buy_share_pct": 46.555,
             "quote_usd_delta": null,
             "note": "Native trade volume, not automatically USD"
           }
         },
-        "last_complete_utc": "2026-10-24T21:55:00Z"
+        "last_complete_utc": "2026-10-24T22:25:00Z"
       },
       "funding": {
         "status": "ok",
         "value": -0.000339,
-        "updated_utc": "2026-10-24T22:00:19.374000Z"
+        "updated_utc": "2026-10-24T22:29:29.725000Z"
       }
     }
   },
-  "quality_status": "partial",
+  "quality_status": "complete",
   "limitations": [
     "Coinalyze liquidation bars are reported aggregates, not a future liquidation heatmap. Coarse bins may be hours behind; inspect their end timestamps.",
     "OI changes do not identify which side initiated new positions.",
