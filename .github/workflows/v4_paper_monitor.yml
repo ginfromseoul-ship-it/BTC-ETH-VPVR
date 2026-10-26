@@ -1,0 +1,68 @@
+name: BTC ETH V4 Prospective Buy Timing Paper Watch
+# V4_MONITOR_VERSION: 2026-10-26-01
+# No orders, no buy alerts, no live exchange API trading keys.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Market flow: :07/:22/:37/:52, Coinalyze: :12/:27/:42/:57 UTC.
+    # Extra delay is needed because Actions schedules are not guaranteed on time.
+    - cron: '4,19,34,49 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-eth-v4-prospective-paper-monitor
+  cancel-in-progress: false
+
+jobs:
+  paper_observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout verified data and versioned paper ledger
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate V4 logic without network or market orders
+        run: python -m unittest -v test_v4_paper_monitor.py
+      - name: Record prospective observations and due paper outcomes
+        run: |
+          set -euo pipefail
+          python v4_paper_monitor.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('data/v4_monitor/latest.json').read_text('utf8'))
+          assert r['research_only'] and not r['orders_enabled'] and not r['buy_alerts_enabled']
+          assert r['version']=='v4_prospective_paper_2026-10-26_01'
+          assert set(r['states'])=={'BTC','ETH'}
+          print('Paper-only observation saved; no live orders sent')
+          PY
+      - name: Store append-only paper audit in main branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4; do
+            git add -A data/v4_monitor
+            if git diff --cached --quiet; then echo 'No new data'; exit 0; fi
+            git commit -m 'Append BTC ETH V4 prospective paper observations (no orders)'
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              echo 'Prospective paper ledger persisted'; exit 0
+            fi
+            git rebase --abort || true
+            git reset --hard origin/main
+            echo "Concurrent push retry $attempt: recomputing ledger from updated main" >&2
+            python v4_paper_monitor.py
+            sleep "$((attempt*3))"
+          done
+          echo 'Unable to save new observations after 4 retries' >&2
+          exit 1
