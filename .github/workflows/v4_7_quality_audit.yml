@@ -1,0 +1,242 @@
+name: BTC ETH V4.7 Observation Quality Audit No Orders
+# Observational operations evidence, no source or research ledger mutation.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '21 */6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: btc-eth-v47-readonly-audit
+  cancel-in-progress: false
+
+jobs:
+  evaluate_quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Read recorded prospective data
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run immutable observation-quality audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/v47_quality.py <<'PY'
+          #!/usr/bin/env python3
+          """Forward observation quality report for V4.6/V4.5 research.
+          Read-only, no new observations, no buy signals. All times UTC.
+          """
+          import argparse
+          import json
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          UTC = timezone.utc
+          VERSION = 'v4_7_observation_quality_2026-10-26_01'
+          BASELINE_ANCHOR = datetime(2026, 10, 26, 6, 13, 39, tzinfo=UTC)
+          SYMBOLS = ('BTC', 'ETH')
+          INVALID = {'DATA_UNAVAILABLE'}
+
+          def stamp(s):
+              if not isinstance(s, str):
+                  raise ValueError('missing timestamp')
+              d = datetime.fromisoformat(s.replace('Z', '+00:00'))
+              if d.tzinfo is None:
+                  raise ValueError('timezone missing')
+              return d.astimezone(UTC)
+
+          def iso(t):
+              return t.astimezone(UTC).isoformat(timespec='seconds').replace('+00:00', 'Z')
+
+          def read_records(folder, now):
+              result = []
+              folder = Path(folder)
+              if not folder.exists():
+                  return result
+              first_day = (now - timedelta(days=3)).date().isoformat()
+              for path in sorted(folder.glob('*.jsonl')):
+                  if path.stem < first_day:
+                      continue
+                  for line in path.read_text(encoding='utf8').splitlines():
+                      if not line.strip():
+                          continue
+                      try:
+                          v = json.loads(line)
+                          seen = stamp(v['first_seen_utc'] if 'first_seen_utc' in v else v['decision_recorded_utc'])
+                      except (ValueError, TypeError, KeyError):
+                          continue
+                      if seen <= now and seen >= now-timedelta(hours=49):
+                          result.append((seen, v))
+              return result
+
+          def unique_snapshots(rows):
+              out = {}
+              for at, record in sorted(rows, key=lambda x:x[0]):
+                  key = record.get('snapshot_id')
+                  sym = record.get('symbol')
+                  if key and sym in SYMBOLS:
+                      out.setdefault((sym,key), (at,record))
+              return list(out.values())
+
+          def full_valid(v, at):
+              if v.get('state') in INVALID or v.get('missing') or v.get('spot_price_observation_usable') is not True:
+                  return False
+              try:
+                  spot = stamp(v['spot_bar_end_utc'])
+                  fut = stamp(v['futures_bar_end_utc'])
+              except (KeyError, ValueError, TypeError):
+                  return False
+              if spot > at or fut > at:
+                  return False
+              if abs((spot-fut).total_seconds())>15*60:
+                  return False
+              return True
+
+          def summarize_window(rows, decisions, symbol, begin, end):
+              data=sorted(((t,v) for t,v in rows if v['symbol']==symbol and begin<=t<end), key=lambda x:x[0])
+              verified=[t for t,v in data if full_valid(v,t)]
+              gaps=[(b-a).total_seconds()/60 for a,b in zip(verified,verified[1:])]
+              state_rows=[v for t,v in decisions if v.get('symbol')==symbol and begin<=t<end]
+              stages={}
+              for v in state_rows:
+                  st=v.get('stage','UNKNOWN')
+                  stages[st]=stages.get(st,0)+1
+              return {
+                  'total_observations':len(data),
+                  'full_feature_verified':len(verified),
+                  'invalid_observations':len(data)-len(verified),
+                  'verified_rate_pct':round(100*len(verified)/len(data),2) if data else None,
+                  'verified_pair_count':len(gaps),
+                  'gaps_over_90min':sum(v>90 for v in gaps),
+                  'max_verified_gap_min':round(max(gaps),2) if gaps else None,
+                  'v44_state_counts':stages,
+                  'v44_gap_unverified_count':stages.get('GAP_UNVERIFIED',0),
+                  'v44_source_unverified_count':stages.get('SOURCE_UNVERIFIED',0),
+                  'first_verified_utc':iso(verified[0]) if verified else None,
+                  'last_verified_utc':iso(verified[-1]) if verified else None,
+              }
+
+          def evaluate(root, now):
+              root=Path(root);now=now.astimezone(UTC)
+              monitor=root/'data/v4_monitor'
+              rows=unique_snapshots(read_records(monitor/'snapshots',now))
+              decisions=read_records(monitor/'market_state_v4_4'/'decisions',now)
+              current_from=now-timedelta(hours=24)
+              prior_from=now-timedelta(hours=48)
+              groups={}
+              for symbol in SYMBOLS:
+                  current=summarize_window(rows,decisions,symbol,current_from,now)
+                  prior=summarize_window(rows,decisions,symbol,prior_from,current_from)
+                  ready=(prior_from>=BASELINE_ANCHOR and current['full_feature_verified']>=8
+                         and prior['full_feature_verified']>=8)
+                  groups[symbol]={'last_24h':current,'previous_24h':prior,
+                      'descriptive_comparison_ready':ready,
+                      'verified_rate_change_pp':round(current['verified_rate_pct']-prior['verified_rate_pct'],2)
+                        if ready else None,
+                      'gap_count_change':current['gaps_over_90min']-prior['gaps_over_90min'] if ready else None}
+              return {
+                  'version':VERSION,'generated_utc':iso(now),'v46_first_diagnostic_utc':iso(BASELINE_ANCHOR),
+                  'research_only':True,'orders_enabled':False,'alerts_enabled':False,
+                  'synthetic_observations':False,'repository_modified':False,
+                  'status':'DESCRIPTIVE_WINDOWS_READY' if all(groups[s]['descriptive_comparison_ready'] for s in SYMBOLS)
+                           else 'INSUFFICIENT_PROSPECTIVE_WINDOWS',
+                  'assets':groups,
+                  'limitations':[
+                      'V4.6 original run was dry-run. Correlation with time does not prove rescue caused improved coverage.',
+                      'Only first-seen committed V4.2 snapshots; no historical backfill or artificial 15m observations.',
+                      'Gaps between recorded valid observations; start/end censoring makes gap counts lower bounds.',
+                      'Both 24h windows must postdate V4.6 inception with at least 8 valid observations each.',
+                      'Observational counts cannot prove profitable signals or guaranteed scheduling.'
+                  ]}
+
+          def tests():
+              import tempfile
+              def t(minutes):return BASELINE_ANCHOR+timedelta(minutes=minutes)
+              def obs(minutes,symbol='BTC',state='MIXED_WAIT',missing=None):
+                  at=t(minutes)
+                  return (at,{'snapshot_id':symbol+str(minutes),'symbol':symbol,'first_seen_utc':iso(at),
+                    'spot_bar_end_utc':iso(at-timedelta(minutes=5)),
+                    'futures_bar_end_utc':iso(at-timedelta(minutes=10)),
+                    'state':state,'missing':missing or [],'spot_price_observation_usable':True})
+              a=obs(0);b=obs(20);c=obs(140)
+              assert stamp(iso(a[0]))==a[0]
+              try:stamp('2026-10-26T12:00:00')
+              except ValueError:pass
+              else:raise AssertionError('naive allowed')
+              assert len(unique_snapshots([a,a,b]))==2
+              assert full_valid(a[1],a[0])
+              assert not full_valid(obs(30,state='DATA_UNAVAILABLE')[1],t(30))
+              v=obs(30);v[1]['futures_bar_end_utc']=iso(t(60))
+              assert not full_valid(v[1],v[0])
+              d=summarize_window([a,b,c],[],'BTC',t(-1),t(200))
+              assert d['gaps_over_90min']==1 and d['full_feature_verified']==3
+              assert summarize_window([],[],'ETH',t(0),t(30))['verified_rate_pct'] is None
+              assert summarize_window([a],[(t(0),{'symbol':'BTC','stage':'GAP_UNVERIFIED'})],'BTC',t(-1),t(2))['v44_gap_unverified_count']==1
+              with tempfile.TemporaryDirectory() as tmp:
+                  p=Path(tmp)/'data/v4_monitor/snapshots';p.mkdir(parents=True)
+                  (p/(t(0).date().isoformat()+'.jsonl')).write_text(json.dumps(a[1])+'\n'+json.dumps(b[1])+'\n',encoding='utf8')
+                  r=evaluate(tmp,t(60))
+                  assert r['status']=='INSUFFICIENT_PROSPECTIVE_WINDOWS'
+                  assert r['assets']['BTC']['last_24h']['total_observations']==2
+                  assert r['synthetic_observations'] is False
+                  assert r['repository_modified'] is False
+                  assert r['assets']['BTC']['verified_rate_change_pp'] is None
+              print('V4.7 audit self-tests PASS')
+
+          def main():
+              ap=argparse.ArgumentParser()
+              ap.add_argument('--root',type=Path,default=Path('.'))
+              ap.add_argument('--output',type=Path,default=Path('/tmp/v47_quality.json'))
+              ap.add_argument('--self-test',action='store_true')
+              args=ap.parse_args()
+              if args.self_test:
+                  tests();return
+              result=evaluate(args.root,datetime.now(UTC))
+              args.output.parent.mkdir(parents=True,exist_ok=True)
+              args.output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf8')
+              print('V4_7_DATA_QUALITY '+json.dumps({
+                  'status':result['status'],
+                  'assets':{s:{
+                      'last_24h':result['assets'][s]['last_24h'],
+                      'comparison_ready':result['assets'][s]['descriptive_comparison_ready']
+                  } for s in SYMBOLS}
+              }))
+              from os import environ
+              if environ.get('GITHUB_STEP_SUMMARY'):
+                  with Path(environ['GITHUB_STEP_SUMMARY']).open('a',encoding='utf8') as f:
+                      f.write('## BTC ETH V4.7 data quality (research-only)\n\n')
+                      f.write('| Asset | 24h observed | Full usable | Valid % | Gap >90m | Longest verified gap | Compare ready |\n|---|---:|---:|---:|---:|---:|---|\n')
+                      for s in SYMBOLS:
+                          x=result['assets'][s]['last_24h']
+                          f.write(f'| {s} | {x["total_observations"]} | {x["full_feature_verified"]} | {x["verified_rate_pct"]} | {x["gaps_over_90min"]} | {x["max_verified_gap_min"]} | {result["assets"][s]["descriptive_comparison_ready"]} |\n')
+                      f.write('\nNo synthetic observations, trading, or claimed predictive edge.\n')
+
+          if __name__=='__main__':main()
+          PY
+          python /tmp/v47_quality.py --self-test
+          python /tmp/v47_quality.py --root . --output /tmp/v47_quality_report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('/tmp/v47_quality_report.json').read_text('utf8'))
+          assert obj['research_only'] and not obj['orders_enabled']
+          assert not obj['synthetic_observations'] and not obj['repository_modified']
+          assert set(obj['assets']) == {'BTC', 'ETH'}
+          print('V4.7 report safety verified')
+          PY
+      - name: Upload audit only; never commit or change GitHub data
+        uses: actions/upload-artifact@v4
+        with:
+          name: v47-observation-quality-${{ github.run_id }}
+          path: /tmp/v47_quality_report.json
+          retention-days: 30
+          if-no-files-found: error
