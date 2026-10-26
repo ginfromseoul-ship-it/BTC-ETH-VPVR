@@ -1,7 +1,7 @@
 {
   "version": "v4_prospective_paper_2026-10-26_01",
   "timing_guard_revision": "2026-10-26-v4.1-first-seen-proxy",
-  "generated_utc": "2026-10-26T20:10:05Z",
+  "generated_utc": "2026-10-26T20:40:16Z",
   "cadence": "scheduled approximately 15min; not tick realtime",
   "research_only": true,
   "buy_alerts_enabled": false,
@@ -9,63 +9,71 @@
   "executable_buy_prices_available": false,
   "input_sources": {
     "spot_collected_utc": "2026-10-26T20:07:20.669000Z",
-    "futures_collected_utc": "2026-10-26T20:09:27Z"
+    "futures_collected_utc": "2026-10-26T20:39:56Z"
   },
   "states": {
     "BTC": {
       "version": "v4_prospective_paper_2026-10-26_01",
       "symbol": "BTC",
-      "first_seen_utc": "2026-10-26T20:10:05Z",
+      "first_seen_utc": "2026-10-26T20:40:16Z",
       "spot_bar_end_utc": "2026-10-26T20:05:00Z",
-      "futures_bar_end_utc": "2026-10-26T20:05:00Z",
+      "futures_bar_end_utc": "2026-10-26T20:35:00Z",
       "reference_close_usdt": 79927.12,
-      "state": "NO_DOWNTURN_SETUP",
+      "state": "DATA_UNAVAILABLE",
       "research_only": true,
       "not_an_order_or_buy_recommendation": true,
       "evidence": {
         "spot_buy_share_1h_pct": 65.67,
         "spot_buy_share_last15m_pct": 54.4812,
-        "futures_buy_share_1h_pct": 51.701,
+        "futures_buy_share_1h_pct": 49.872,
         "spot_price_change_4h_pct": -0.4646,
-        "oi_native_change_1h_pct": 0.1737,
-        "reported_long_liquidations_1h_usd": 341414.13,
-        "reported_short_liquidations_1h_usd": 14427.42,
+        "oi_native_change_1h_pct": 0.2822,
+        "reported_long_liquidations_1h_usd": 279896.21,
+        "reported_short_liquidations_1h_usd": 399.97,
         "depth_bid_ask_ratio_0_1pct_snapshot": 0.9991,
         "price_distance_from_recent_close_low_pct": 0.054,
         "close_based_invalidation_reference_usdt": 79724.232,
-        "risk_to_reference_pct": 0.2538,
-        "price_trigger_hypothesis": "4h dip <= -1pct for either symbol; shared research gate"
+        "risk_to_reference_pct": 0.2538
       },
-      "missing": [],
-      "spot_price_observation_usable": true,
+      "missing": [
+        "stale_or_future_spot",
+        "stale_or_future_spot_1h_end",
+        "stale_or_future_spot_4h_end",
+        "unsynchronized_spot_futures"
+      ],
+      "spot_price_observation_usable": false,
       "snapshot_id": "0404ffc8876b41115d98a32f"
     },
     "ETH": {
       "version": "v4_prospective_paper_2026-10-26_01",
       "symbol": "ETH",
-      "first_seen_utc": "2026-10-26T20:10:05Z",
+      "first_seen_utc": "2026-10-26T20:40:16Z",
       "spot_bar_end_utc": "2026-10-26T20:05:00Z",
-      "futures_bar_end_utc": "2026-10-26T20:05:00Z",
+      "futures_bar_end_utc": "2026-10-26T20:35:00Z",
       "reference_close_usdt": 2315.18,
-      "state": "NO_DOWNTURN_SETUP",
+      "state": "DATA_UNAVAILABLE",
       "research_only": true,
       "not_an_order_or_buy_recommendation": true,
       "evidence": {
         "spot_buy_share_1h_pct": 54.933,
         "spot_buy_share_last15m_pct": 55.9688,
-        "futures_buy_share_1h_pct": 47.725,
+        "futures_buy_share_1h_pct": 44.97,
         "spot_price_change_4h_pct": -0.3872,
-        "oi_native_change_1h_pct": 0.0438,
-        "reported_long_liquidations_1h_usd": 234889.23,
-        "reported_short_liquidations_1h_usd": 265797.51,
+        "oi_native_change_1h_pct": 0.1216,
+        "reported_long_liquidations_1h_usd": 82559.34,
+        "reported_short_liquidations_1h_usd": 263853.91,
         "depth_bid_ask_ratio_0_1pct_snapshot": 1.0477,
         "price_distance_from_recent_close_low_pct": 0.1596,
         "close_based_invalidation_reference_usdt": 2306.86702,
-        "risk_to_reference_pct": 0.3591,
-        "price_trigger_hypothesis": "4h dip <= -1pct for either symbol; shared research gate"
+        "risk_to_reference_pct": 0.3591
       },
-      "missing": [],
-      "spot_price_observation_usable": true,
+      "missing": [
+        "stale_or_future_spot",
+        "stale_or_future_spot_1h_end",
+        "stale_or_future_spot_4h_end",
+        "unsynchronized_spot_futures"
+      ],
+      "spot_price_observation_usable": false,
       "snapshot_id": "bdd56c2ca22afbaaa3b66ac5"
     }
   },
