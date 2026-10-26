@@ -1,13 +1,13 @@
 {
   "version": "v4_2_operational_2026-10-26_01",
-  "audit_utc": "2026-10-26T11:47:25Z",
-  "status": "DEGRADED_SCHEDULE",
-  "audit_run_id": "40317648153-1",
+  "audit_utc": "2026-10-26T13:37:57Z",
+  "status": "BLOCKED",
+  "audit_run_id": "40332256450-1",
   "trigger": {
-    "event_name": "schedule",
-    "upstream_workflow": null
+    "event_name": "workflow_run",
+    "upstream_workflow": "BTC ETH Market Flow 15min"
   },
-  "v4_monitor_generated_utc": "2026-10-26T11:47:20Z",
+  "v4_monitor_generated_utc": "2026-10-26T13:37:53Z",
   "observer_version": "v4_prospective_paper_2026-10-26_01",
   "new_snapshots_saved": 2,
   "new_paper_entries": 0,
@@ -15,53 +15,63 @@
   "sources": {
     "spot": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-25T10:17:25Z",
-      "observed_window_end_utc": "2026-10-26T10:17:25Z",
+      "observed_window_start_utc": "2026-10-25T12:07:57Z",
+      "observed_window_end_utc": "2026-10-26T12:07:57Z",
       "expected_slots": 96,
-      "observed_scheduled_starts": 41,
-      "approximate_start_coverage_pct": 42.71,
-      "scheduled_completed": 41,
-      "scheduled_success": 41,
+      "observed_scheduled_starts": 39,
+      "approximate_start_coverage_pct": 40.62,
+      "scheduled_completed": 39,
+      "scheduled_success": 39,
       "scheduled_failure": 0,
-      "median_start_interval_min": 34.97,
+      "median_start_interval_min": 36.37,
       "largest_start_interval_min": 64.72,
       "method": "Actual event=schedule runs created in a 24h window ending 90m ago; approximate count; no exact cron slot matching; historical schedule assumed unchanged."
     },
     "derivatives": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-25T10:17:25Z",
-      "observed_window_end_utc": "2026-10-26T10:17:25Z",
+      "observed_window_start_utc": "2026-10-25T12:07:57Z",
+      "observed_window_end_utc": "2026-10-26T12:07:57Z",
       "expected_slots": 96,
-      "observed_scheduled_starts": 44,
-      "approximate_start_coverage_pct": 45.83,
-      "scheduled_completed": 44,
-      "scheduled_success": 43,
+      "observed_scheduled_starts": 43,
+      "approximate_start_coverage_pct": 44.79,
+      "scheduled_completed": 43,
+      "scheduled_success": 42,
       "scheduled_failure": 1,
-      "median_start_interval_min": 30.53,
+      "median_start_interval_min": 30.6,
       "largest_start_interval_min": 62.2,
       "method": "Actual event=schedule runs created in a 24h window ending 90m ago; approximate count; no exact cron slot matching; historical schedule assumed unchanged."
     }
   },
   "assets": {
     "BTC": {
-      "status": "FRESH_AND_USABLE",
-      "model_state": "NO_DOWNTURN_SETUP",
-      "spot_bar_age_minutes": 2.43,
-      "futures_bar_age_minutes": 7.43,
-      "spot_collector_age_minutes": 1.5,
-      "derivatives_collector_age_minutes": 2.08,
-      "cross_source_end_skew_minutes": 5.0,
-      "failed_checks": []
+      "status": "BLOCKED_OR_STALE",
+      "model_state": "DATA_UNAVAILABLE",
+      "spot_bar_age_minutes": 2.95,
+      "futures_bar_age_minutes": 87.95,
+      "spot_collector_age_minutes": 0.37,
+      "derivatives_collector_age_minutes": 86.0,
+      "cross_source_end_skew_minutes": 85.0,
+      "failed_checks": [
+        "futures_candle_fresh",
+        "derivatives_collector_fresh",
+        "cross_source_bar_skew_ok",
+        "usable_model_decision"
+      ]
     },
     "ETH": {
-      "status": "FRESH_AND_USABLE",
-      "model_state": "NO_DOWNTURN_SETUP",
-      "spot_bar_age_minutes": 2.43,
-      "futures_bar_age_minutes": 7.43,
-      "spot_collector_age_minutes": 1.5,
-      "derivatives_collector_age_minutes": 2.08,
-      "cross_source_end_skew_minutes": 5.0,
-      "failed_checks": []
+      "status": "BLOCKED_OR_STALE",
+      "model_state": "DATA_UNAVAILABLE",
+      "spot_bar_age_minutes": 2.95,
+      "futures_bar_age_minutes": 87.95,
+      "spot_collector_age_minutes": 0.37,
+      "derivatives_collector_age_minutes": 86.0,
+      "cross_source_end_skew_minutes": 85.0,
+      "failed_checks": [
+        "futures_candle_fresh",
+        "derivatives_collector_fresh",
+        "cross_source_bar_skew_ok",
+        "usable_model_decision"
+      ]
     }
   },
   "research_only": true,
