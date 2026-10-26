@@ -1,43 +1,43 @@
 {
   "version": "v4_2_operational_2026-10-26_01",
-  "audit_utc": "2026-10-26T13:37:57Z",
+  "audit_utc": "2026-10-26T14:12:00Z",
   "status": "BLOCKED",
-  "audit_run_id": "40332256450-1",
+  "audit_run_id": "40337378875-1",
   "trigger": {
     "event_name": "workflow_run",
-    "upstream_workflow": "BTC ETH Market Flow 15min"
+    "upstream_workflow": "BTC ETH Coinalyze Derivatives"
   },
-  "v4_monitor_generated_utc": "2026-10-26T13:37:53Z",
+  "v4_monitor_generated_utc": "2026-10-26T14:11:57Z",
   "observer_version": "v4_prospective_paper_2026-10-26_01",
-  "new_snapshots_saved": 2,
+  "new_snapshots_saved": 0,
   "new_paper_entries": 0,
   "new_forward_outcomes": 0,
   "sources": {
     "spot": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-25T12:07:57Z",
-      "observed_window_end_utc": "2026-10-26T12:07:57Z",
+      "observed_window_start_utc": "2026-10-25T12:42:00Z",
+      "observed_window_end_utc": "2026-10-26T12:42:00Z",
       "expected_slots": 96,
-      "observed_scheduled_starts": 39,
-      "approximate_start_coverage_pct": 40.62,
-      "scheduled_completed": 39,
-      "scheduled_success": 39,
+      "observed_scheduled_starts": 38,
+      "approximate_start_coverage_pct": 39.58,
+      "scheduled_completed": 38,
+      "scheduled_success": 38,
       "scheduled_failure": 0,
-      "median_start_interval_min": 36.37,
+      "median_start_interval_min": 36.13,
       "largest_start_interval_min": 64.72,
       "method": "Actual event=schedule runs created in a 24h window ending 90m ago; approximate count; no exact cron slot matching; historical schedule assumed unchanged."
     },
     "derivatives": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-25T12:07:57Z",
-      "observed_window_end_utc": "2026-10-26T12:07:57Z",
+      "observed_window_start_utc": "2026-10-25T12:42:00Z",
+      "observed_window_end_utc": "2026-10-26T12:42:00Z",
       "expected_slots": 96,
-      "observed_scheduled_starts": 43,
-      "approximate_start_coverage_pct": 44.79,
-      "scheduled_completed": 43,
-      "scheduled_success": 42,
+      "observed_scheduled_starts": 42,
+      "approximate_start_coverage_pct": 43.75,
+      "scheduled_completed": 42,
+      "scheduled_success": 41,
       "scheduled_failure": 1,
-      "median_start_interval_min": 30.6,
+      "median_start_interval_min": 30.57,
       "largest_start_interval_min": 62.2,
       "method": "Actual event=schedule runs created in a 24h window ending 90m ago; approximate count; no exact cron slot matching; historical schedule assumed unchanged."
     }
@@ -46,14 +46,13 @@
     "BTC": {
       "status": "BLOCKED_OR_STALE",
       "model_state": "DATA_UNAVAILABLE",
-      "spot_bar_age_minutes": 2.95,
-      "futures_bar_age_minutes": 87.95,
-      "spot_collector_age_minutes": 0.37,
-      "derivatives_collector_age_minutes": 86.0,
-      "cross_source_end_skew_minutes": 85.0,
+      "spot_bar_age_minutes": 37.01,
+      "futures_bar_age_minutes": 2.01,
+      "spot_collector_age_minutes": 34.43,
+      "derivatives_collector_age_minutes": 0.38,
+      "cross_source_end_skew_minutes": 35.0,
       "failed_checks": [
-        "futures_candle_fresh",
-        "derivatives_collector_fresh",
+        "spot_candle_fresh",
         "cross_source_bar_skew_ok",
         "usable_model_decision"
       ]
@@ -61,14 +60,13 @@
     "ETH": {
       "status": "BLOCKED_OR_STALE",
       "model_state": "DATA_UNAVAILABLE",
-      "spot_bar_age_minutes": 2.95,
-      "futures_bar_age_minutes": 87.95,
-      "spot_collector_age_minutes": 0.37,
-      "derivatives_collector_age_minutes": 86.0,
-      "cross_source_end_skew_minutes": 85.0,
+      "spot_bar_age_minutes": 37.01,
+      "futures_bar_age_minutes": 2.01,
+      "spot_collector_age_minutes": 34.43,
+      "derivatives_collector_age_minutes": 0.38,
+      "cross_source_end_skew_minutes": 35.0,
       "failed_checks": [
-        "futures_candle_fresh",
-        "derivatives_collector_fresh",
+        "spot_candle_fresh",
         "cross_source_bar_skew_ok",
         "usable_model_decision"
       ]
