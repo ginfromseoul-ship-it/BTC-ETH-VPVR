@@ -1,17 +1,16 @@
 name: BTC ETH Historical OI Funding 12-24 Months
-# OI_EXTENDED_VERSION: 2026-10-23-v2
-# Safe wrapper around the validated historical_derivatives.yml importer.
-# Narrow, explicit quarantine for unverified 2026-01-04 ETH OI timestamp data.
-# Never fabricate OI or relax the original timing verification thresholds.
+# OI_EXTENDED_VERSION: 2026-10-26-v3
+# Keep strict timestamp alignment; salvage real vendor rows from incomplete days.
+# No zero fill, forward fill, or price/OI timestamp guessing.
 
 on:
   workflow_dispatch:
     inputs:
       scope:
-        description: '12_months: complete backfill with audited ETH Jan 4 quarantine. Validate before 24_months.'
+        description: 'Historical OI and settled funding. 24m recommended after 12m verification.'
         required: true
         type: choice
-        default: 12_months
+        default: 24_months
         options:
           - 12_months
           - 24_months
@@ -31,73 +30,78 @@ jobs:
     env:
       SCOPE: ${{ inputs.scope }}
     steps:
-      - name: Check out existing archive and verified importer
+      - name: Check out archived prices and verified importer
         uses: actions/checkout@v4
         with:
           ref: main
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Extend allowed periods without changing original import logic
+      - name: Prepare precise 24m importer and missing-slot audit
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
           from textwrap import dedent
-          original = Path('.github/workflows/historical_derivatives.yml').read_text(encoding='utf8')
+          original=Path('.github/workflows/historical_derivatives.yml').read_text(encoding='utf8')
           if '# OI_FIX_VERSION: 2026-10-23-v3' not in original:
-              raise RuntimeError('Expected validated OI importer v3; abort rather than using unknown code')
-          start = "cat > /tmp/historical_derivatives_import.py <<'PY_DERIVATIVE_IMPORT'\n"
-          end = '\n          PY_DERIVATIVE_IMPORT'
-          if original.count(start) != 1 or original.count(end) != 1:
-              raise RuntimeError('Original workflow code boundaries changed; abort safely')
-          script = dedent(original.split(start, 1)[1].split(end, 1)[0]) + '\n'
-          before = "n={'1_month':1,'3_months':3,'6_months':6}.get(scope)"
-          after = "n={'1_month':1,'3_months':3,'6_months':6,'12_months':12,'24_months':24}.get(scope)"
-          if script.count(before) != 1:
-              raise RuntimeError('Expected exact selection code missing; abort safely')
-          script = script.replace(before, after)
-          before_msg = "scope must be pilot/1_month/3_months/6_months"
-          if script.count(before_msg) != 1:
-              raise RuntimeError('Scope validation changed; abort safely')
-          script = script.replace(before_msg, 'scope must be pilot/1_month/3_months/6_months/12_months/24_months')
-
-          # Explicitly quarantine a single vendor OI file with unverified
-          # observation-time alignment. No threshold relaxation or imputation.
-          before_quarantine = ("                else:\n"
-                               "                    report['failures'].append({'source':str(task),'error':type(ex).__name__+': '+message[:230]})\n"
-                               "                    print('FAIL',task,message[:200],file=sys.stderr,flush=True)")
-          after_quarantine = ("                elif (kind == 'oi' and s == 'ETH' and period == date(2026,1,4)\n"
-                              "                      and 'timestamp label mode=start cannot be proven by futures taker ratios' in message):\n"
-                              "                    report['source_quality_gaps'].append({\n"
-                              "                        'symbol':s, 'period':period.isoformat(), 'kind':'oi',\n"
-                              "                        'reason':'Observation timestamp not independently proven',\n"
-                              "                        'quarantined_observations':288,\n"
-                              "                        'original_validation_error':message[:700],\n"
-                              "                        'action':'Quarantined full-day ETH OI, no timestamps guessed, no zeros or interpolation'\n"
-                              "                    })\n"
-                              "                    print('QUARANTINED_UNVERIFIED_OI_TIMESTAMP',kind,s,period,flush=True)\n"
-                              "                else:\n"
-                              "                    report['failures'].append({'source':str(task),'error':type(ex).__name__+': '+message[:230]})\n"
-                              "                    print('FAIL',task,message[:200],file=sys.stderr,flush=True)")
-          if script.count(before_quarantine) != 1:
-              raise RuntimeError('Expected exact OI error handler missing; abort safely')
-          script = script.replace(before_quarantine,after_quarantine)
-          compile(script, '/tmp/historical_derivatives_import.py', 'exec')
-          Path('/tmp/historical_derivatives_import.py').write_text(script, encoding='utf8')
-          print('Parser retained; only ETH 2026-01-04 unverified OI quarantined with explicit gap audit')
+              raise RuntimeError('Verified base importer v3 missing')
+          start="cat > /tmp/historical_derivatives_import.py <<'PY_DERIVATIVE_IMPORT'\n"
+          end='\n          PY_DERIVATIVE_IMPORT'
+          if original.count(start)!=1 or original.count(end)!=1:
+              raise RuntimeError('Verified original importer boundaries changed')
+          script=dedent(original.split(start,1)[1].split(end,1)[0])+'\n'
+          def replace_once(old,new):
+              global script
+              if script.count(old)!=1:raise RuntimeError('Importer compatibility mismatch: '+old[:80])
+              script=script.replace(old,new)
+          replace_once("n={'1_month':1,'3_months':3,'6_months':6}.get(scope)",
+                       "n={'1_month':1,'3_months':3,'6_months':6,'12_months':12,'24_months':24}.get(scope)")
+          replace_once('scope must be pilot/1_month/3_months/6_months',
+                       'scope must be pilot/1_month/3_months/6_months/12_months/24_months')
+          start_fn=script.index('def metrics_parse(rows,symbol,day):')
+          end_fn=script.index('def funding_parse(rows,symbol,month):')
+          script=script[:start_fn]+'def metrics_parse(rows,symbol,day):\n    """Parse independently verified OI samples; missing source rows remain NULL.\n\n    The start/end timestamp convention must be proven by taker-volume alignment\n    whenever the archive day has missing source intervals or ambiguous edges.\n    """\n    first=day_start(day)\n    start_labels=set(range(first,first+86400,300))\n    end_labels=set(range(first+300,first+86400+300,300))\n    labels=[parse_time(r[\'create_time\']) for r in rows]\n    actual=set(labels)\n    if len(rows)<270 or len(rows)>288 or len(actual)!=len(rows):\n        raise ValueError(f\'{day} {symbol} metrics rows={len(rows)} unique={len(actual)} expected between 270 and 288 without duplicates\')\n    candidates=[mode for mode,expected_set in [(\'start\',start_labels),(\'end\',end_labels)] if actual.issubset(expected_set)]\n    if not candidates:\n        raise ValueError(f\'{day} {symbol} irregular 5m labels: first={stamp(min(actual))},last={stamp(max(actual))}\')\n    expected=\'start\' if day>=CUTOFF else \'end\'\n    score=None\n    if len(candidates)==1:\n        mode=candidates[0]\n    else:\n        score=taker_ratio_alignment(rows,symbol,day)\n        def median(mode):\n            v=score[mode][\'median_absolute_log_error\']\n            return float(\'inf\') if v is None else v\n        mode=min(candidates,key=median)\n    requires_ratio_audit=(len(rows)!=288 or len(candidates)!=1 or mode!=expected or day in (date(2026,6,24),date(2026,6,25)))\n    if requires_ratio_audit:\n        if score is None:score=taker_ratio_alignment(rows,symbol,day)\n        right=score[mode];other=score[\'end\' if mode==\'start\' else \'start\']\n        err=right[\'median_absolute_log_error\'];other_err=other[\'median_absolute_log_error\']\n        if (right[\'samples\']<200 or err is None or err>0.07 or\n             other_err is None or err*2>other_err):\n            raise ValueError(f\'{day} {symbol} timestamp mode={mode} not verified by taker ratios: {score}\')\n    expected_labels=start_labels if mode==\'start\' else end_labels\n    missing_labels=sorted(expected_labels-actual)\n    missing_times=[stamp(t+300 if mode==\'start\' else t) for t in missing_labels]\n    out={}\n    bad_oi=[]\n    for row,label in zip(rows,labels):\n        if row.get(\'symbol\') and str(row[\'symbol\']).strip()!=symbol+\'USDT\':\n            raise ValueError(\'symbol mismatch\')\n        native=floating(row[\'sum_open_interest\'],\'sum_open_interest\')\n        notional=floating(row[\'sum_open_interest_value\'],\'sum_open_interest_value\')\n        observed_at=label+300 if mode==\'start\' else label\n        if native<=0 or notional<=0:\n            bad_oi.append(stamp(observed_at))\n            continue\n        if observed_at in out:raise ValueError(\'duplicate normalized OI timestamp\')\n        out[observed_at]={\n            \'t\':observed_at,\'native\':native,\'notional_usdt\':notional,\n            \'raw_label_t\':label,\'label_convention\':\'start_plus_5m\' if mode==\'start\' else \'end_at_T\'}\n    audit={\'label_mode\':mode,\'date_policy_mode\':expected,\'exception\':mode!=expected,\n           \'observations\':len(out),\'label_first_utc\':stamp(min(actual)),\n           \'label_last_utc\':stamp(max(actual)),\'taker_ratio_audit\':score,\n           \'invalid_oi_observation_count\':len(bad_oi),\'invalid_oi_times_utc\':bad_oi,\n           \'missing_source_oi_rows\':len(missing_times),\'missing_source_oi_times_utc\':missing_times}\n    if missing_times:\n        print(\'MISSING_SOURCE_OI_SLOTS\',symbol,day,len(missing_times),missing_times,flush=True)\n    if bad_oi:\n        print(\'SOURCE_QUALITY_GAP\',symbol,day,\'invalid_OI_observations\',len(bad_oi),flush=True)\n    if mode!=expected:\n        print(\'AUDITED DATE EXCEPTION\',symbol,day,mode,\'rather than\',expected,score,flush=True)\n    return out,audit'+'\n\n'+script[end_fn:]
+          # Mark physically missing source rows separately from vendor nonpositive OI.
+          replace_once("                print('OK',typ,s,label,'+',stats['new_points'],flush=True)",
+          """                if typ=='oi' and audit and audit.get('missing_source_oi_rows',0):
+                              report['source_quality_gaps'].append({
+                                  'symbol':s,'period':label,'kind':'oi',
+                                  'missing_source_rows':audit['missing_source_oi_rows'],
+                                  'missing_times_utc':audit['missing_source_oi_times_utc'],
+                                  'action':'Source CSV lacks these five-minute observations; leave NULL, never interpolate.'})
+                          print('OK',typ,s,label,'+',stats['new_points'],flush=True)""")
+          # The original strict Jan 4 quarantine continues unchanged.
+          before_quarantine=("                else:\n"
+                             "                    report['failures'].append({'source':str(task),'error':type(ex).__name__+': '+message[:230]})\n"
+                             "                    print('FAIL',task,message[:200],file=sys.stderr,flush=True)")
+          after_quarantine=("                elif (kind == 'oi' and s == 'ETH' and period == date(2026,1,4)\n"
+                            "                      and ('timestamp label mode=start cannot be proven by futures taker ratios' in message or\n"
+                            "                           'timestamp mode=start not verified by taker ratios' in message)):\n"
+                            "                    report['source_quality_gaps'].append({\n"
+                            "                        'symbol':s,'period':period.isoformat(),'kind':'oi',\n"
+                            "                        'reason':'Observation timestamp not independently proven',\n"
+                            "                        'quarantined_observations':288,\n"
+                            "                        'original_validation_error':message[:700],\n"
+                            "                        'action':'Full-day ETH OI excluded without shifted timestamps or interpolation'\n"
+                            "                    })\n"
+                            "                    print('QUARANTINED_UNVERIFIED_OI_TIMESTAMP',kind,s,period,flush=True)\n"
+                            "                else:\n"
+                            "                    report['failures'].append({'source':str(task),'error':type(ex).__name__+': '+message[:230]})\n"
+                            "                    print('FAIL',task,message[:200],file=sys.stderr,flush=True)")
+          replace_once(before_quarantine,after_quarantine)
+          compile(script, '/tmp/historical_derivatives_import.py','exec')
+          Path('/tmp/historical_derivatives_import.py').write_text(script,encoding='utf8')
+          print('OI 24m v3: validates partial 5m source days with taker alignment; missing slots tracked, not fabricated')
           PY
-
-      - name: Import checksum-verified Binance OI and actual settled funding
+      - name: Collect checksum-verified Binance OI and funding
         id: collect
         continue-on-error: true
+        shell: bash
         run: python /tmp/historical_derivatives_import.py
-
-      - name: Commit historical OI funding records and quality report
+      - name: Commit historical derivative observations and audit
         if: always()
         shell: bash
         run: |
@@ -107,36 +111,33 @@ jobs:
           for attempt in 1 2 3 4; do
             git add -A data/market_archive data/historical_derivatives_report.json
             if git diff --cached --quiet; then
-              echo 'No new observations to commit'
+              echo 'No new records to commit'
               exit 0
             fi
-            git commit -m "Expand BTC ETH audited OI/funding ($SCOPE)"
+            git commit -m "Expand BTC ETH verified OI/funding with missing-slot audit ($SCOPE)"
             git fetch origin main
             if git rebase origin/main && git push origin HEAD:main; then
-              echo 'Historical derivatives committed successfully'
+              echo 'Historical OI funding saved'
               exit 0
             fi
             git rebase --abort || true
             git reset --hard origin/main
-            echo "Re-importing on updated main due to concurrent changes ($attempt)" >&2
             python /tmp/historical_derivatives_import.py || true
             sleep "$((attempt * 2))"
           done
-          echo 'Failed to persist OI / funding observations due to repeated Git conflicts' >&2
+          echo 'Could not save source observations after retries' >&2
           exit 1
-
-      - name: Rebuild research warehouse V2
+      - name: Request updated SQLite V2
         if: steps.collect.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          set -euo pipefail
           gh workflow run warehouse_v2.yml --ref main
-          echo 'V2 rebuild requested. Verify its completion separately.'
-
-      - name: Fail if source records were incomplete
+          echo 'Rebuild requested; verify its completion separately.'
+      - name: Fail if unresolved source errors remain
         if: steps.collect.outcome == 'failure'
+        shell: bash
         run: |
-          echo 'Some vendor archives failed. Inspect data/historical_derivatives_report.json for details.' >&2
+          echo 'Unresolved source validation failures; see latest GitHub job logs and audit report' >&2
           exit 1
