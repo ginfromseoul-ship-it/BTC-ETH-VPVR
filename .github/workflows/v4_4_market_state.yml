@@ -1,0 +1,76 @@
+name: BTC ETH V4.4 Sequential Market State Research No Orders
+# V4_4_VERSION: 2026-10-26-locked-01
+# Independent forward-only research; NEVER alters V4.2 or V4.3 ledgers.
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - BTC ETH V4 Prospective Buy Timing Paper Watch
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-eth-v44-market-state
+  cancel-in-progress: false
+
+jobs:
+  study:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout immutable source observations
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate all V4.1-V4.4 study rules
+        run: |
+          python -m unittest -v test_v4_paper_monitor.py test_v4_ops_audit.py test_v4_3_cohort_compare.py test_v4_4_sell_exhaustion.py
+      - name: Compute forward-only market states and paper performance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python v4_4_sell_exhaustion.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          folder=Path('data/v4_monitor/market_state_v4_4')
+          obj=json.loads((folder/'latest.json').read_text(encoding='utf8'))
+          protocol=json.loads((folder/'protocol.json').read_text(encoding='utf8'))
+          assert obj['research_only'] is True and obj['orders_enabled'] is False and obj['buy_alerts_enabled'] is False
+          assert protocol['no_historical_backfill'] is True
+          assert set(obj['by_symbol'])=={'BTC','ETH'}
+          assert obj['status'] in ('BOOTSTRAPPED_NO_HISTORICAL_BACKFILL','PROSPECTIVE_RESEARCH_ACTIVE')
+          print('V4.4 safe research ledger',obj['status'])
+          PY
+      - name: Append V4.4 records without altering earlier research
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4; do
+            git add -A data/v4_monitor/market_state_v4_4
+            if git diff --cached --quiet; then
+              echo 'No new V4.4 observation'; exit 0
+            fi
+            git commit -m 'Append V4.4 prospective market-state study (no orders)'
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              echo 'V4.4 prospective records safely persisted'; exit 0
+            fi
+            git rebase --abort || true
+            git reset --hard origin/main
+            echo "Concurrent main branch update: recomputing attempt $attempt" >&2
+            python v4_4_sell_exhaustion.py
+            sleep "$((attempt*3))"
+          done
+          echo 'V4.4 paper ledger persistence failed' >&2
+          exit 1
