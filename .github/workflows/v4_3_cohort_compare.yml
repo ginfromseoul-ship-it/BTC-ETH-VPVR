@@ -1,0 +1,71 @@
+name: BTC ETH V4.3 Forward Cohort Comparison No Orders
+# V4_3_VERSION: 2026-10-26-locked-01
+# Independent research workflow: does not modify the running V4.2 observer.
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - BTC ETH V4 Prospective Buy Timing Paper Watch
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-eth-v43-forward-cohort
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Get V4.2 immutable prospective records
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify V4.3 prospective protocol
+        run: python -m unittest -v test_v4_3_cohort_compare.py
+      - name: Add new cohorts, independent paper entries and outcomes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python v4_3_cohort_compare.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('data/v4_monitor/comparison_v4_3')
+          r=json.loads((root/'latest.json').read_text(encoding='utf8'))
+          assert r['research_only'] is True and not r['orders_enabled'] and not r['buy_alerts_enabled']
+          assert set(r['by_symbol'])=={'BTC','ETH'}
+          assert r['status'] in ('BOOTSTRAPPED_NO_HISTORICAL_BACKFILL','PROSPECTIVE_RESEARCH_ACTIVE')
+          assert (root/'protocol.json').exists()
+          print('Forward-only research and safety conditions verified')
+          PY
+      - name: Persist V4.3 forward-only records
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4; do
+            git add -A data/v4_monitor/comparison_v4_3
+            if git diff --cached --quiet; then echo 'No new comparison observations'; exit 0; fi
+            git commit -m 'Append V4.3 prospective BTC ETH buy timing comparisons (no orders)'
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              echo 'V4.3 forward-only comparison persisted'; exit 0
+            fi
+            git rebase --abort || true
+            git reset --hard origin/main
+            python v4_3_cohort_compare.py
+            sleep "$((attempt*3))"
+          done
+          echo 'Could not safely persist V4.3 comparison' >&2
+          exit 1
