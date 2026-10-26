@@ -1,6 +1,7 @@
 {
   "version": "v4_prospective_paper_2026-10-26_01",
-  "generated_utc": "2026-10-26T03:15:34Z",
+  "timing_guard_revision": "2026-10-26-v4.1-first-seen-proxy",
+  "generated_utc": "2026-10-26T03:27:42Z",
   "cadence": "scheduled approximately 15min; not tick realtime",
   "research_only": true,
   "buy_alerts_enabled": false,
@@ -14,7 +15,7 @@
     "BTC": {
       "version": "v4_prospective_paper_2026-10-26_01",
       "symbol": "BTC",
-      "first_seen_utc": "2026-10-26T03:15:34Z",
+      "first_seen_utc": "2026-10-26T03:27:42Z",
       "spot_bar_end_utc": "2026-10-26T02:55:00Z",
       "futures_bar_end_utc": "2026-10-26T03:10:00Z",
       "reference_close_usdt": 79572.77,
@@ -42,7 +43,7 @@
     "ETH": {
       "version": "v4_prospective_paper_2026-10-26_01",
       "symbol": "ETH",
-      "first_seen_utc": "2026-10-26T03:15:34Z",
+      "first_seen_utc": "2026-10-26T03:27:42Z",
       "spot_bar_end_utc": "2026-10-26T02:55:00Z",
       "futures_bar_end_utc": "2026-10-26T03:10:00Z",
       "reference_close_usdt": 2302.82,
@@ -68,7 +69,7 @@
       "snapshot_id": "7d43e861379c215d86a3f5d9"
     }
   },
-  "new_snapshots_saved": 2,
+  "new_snapshots_saved": 0,
   "candidate_cohort_cooldown_hours": 24,
   "new_paper_entries": 0,
   "new_forward_outcomes": 0,
@@ -76,6 +77,7 @@
     "Prospective observations begin when workflow first runs; historical 24m is NOT used to claim live performance",
     "15m scheduled REST snapshots do not establish absorption/order cancellations or actual execution timing",
     "Liquidation figures are vendor interval aggregates, not comprehensive forceOrder tape",
+    "Paper entry mark requires both source bar close and first-seen to be strictly after signal FIRST SEEN; the price is still a delayed historical close, not an executable quote",
     "Entry/exit are NEXT RECORDED spot closes and can be delayed or missing; no fills/stop execution modeled",
     "Paper returns are simple notional differences minus illustrative roundtrip costs, not realized P&L",
     "Features use asynchronous spot/futures data within up to 15m; only research proxy",
