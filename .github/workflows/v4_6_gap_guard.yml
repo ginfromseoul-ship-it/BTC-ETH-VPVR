@@ -1,0 +1,73 @@
+name: BTC ETH V4.6 Collector Gap Rescue No Orders
+# V4_6_GAP_GUARD: 2026-10-26-01
+# Existing collector workflows are left intact. This workflow only dispatches them
+# when their committed source data is stale, invalid, or mutually out of sync.
+
+on:
+  workflow_dispatch:
+    inputs:
+      execute_recovery:
+        description: 'Dispatch stale collectors? OFF = dry-run, no action.'
+        type: boolean
+        required: false
+        default: false
+  workflow_run:
+    workflows:
+      - BTC ETH Market Flow 15min
+      - BTC ETH Coinalyze Derivatives
+    types: [completed]
+  schedule:
+    - cron: '3,13,23,33,43,53 * * * *'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: btc-eth-v46-gap-guard
+  cancel-in-progress: false
+
+jobs:
+  verify_and_rescue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_DISPATCH: ${{ github.event_name != 'workflow_dispatch' || inputs.execute_recovery }}
+    steps:
+      - name: Checkout latest committed collector files and V4 ledger
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate freshness, skew, cooldown, and anti-loop rules
+        run: python -m unittest -v test_v4_6_gap_guard.py
+      - name: Plan and safely rescue stale or unsynchronized collectors
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUN_DISPATCH" == "true" ]]; then
+            python v4_6_gap_guard.py --root . --output /tmp/v4_6_gap_guard_audit.json
+          else
+            python v4_6_gap_guard.py --root . --dry-run --output /tmp/v4_6_gap_guard_audit.json
+          fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('/tmp/v4_6_gap_guard_audit.json').read_text('utf8'))
+          assert d['research_only'] and not d['orders_enabled']
+          assert not d['synthetic_snapshots_created']
+          assert set(d['sources'])=={'spot','derivatives'}
+          print('Gap guard complete:',d['plans'],d['actions'])
+          PY
+      - name: Preserve diagnostic artifact (no repository changes)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v46-gap-audit-${{ github.run_id }}
+          path: /tmp/v4_6_gap_guard_audit.json
+          if-no-files-found: warn
+          retention-days: 14
