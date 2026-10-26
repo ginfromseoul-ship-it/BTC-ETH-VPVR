@@ -1,7 +1,7 @@
 name: BTC ETH V4 Prospective Buy Timing Paper Watch
-# V4_2_MONITOR_VERSION: 2026-10-26-01
-# Triggered by successful upstream data collection. Backstop cron may be delayed.
-# Study only: no exchange keys, no orders, no live buy alerts.
+# V4_8_LATE_PAIR_PATCH: 2026-10-26-01
+# Preserve V4.2 monitor and append-only ledgers; late VALID same-bar observation is separately first-seen.
+# Research only: no exchange keys, no orders, no live buy alerts.
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
       - BTC ETH Coinalyze Derivatives
     types: [completed]
   schedule:
-    - cron: '13,43 * * * *'  # additional fallback; actual GitHub time may drift
+    - cron: '13,43 * * * *'
 
 permissions:
   contents: write
@@ -23,7 +23,6 @@ concurrency:
 
 jobs:
   paper_observe:
-    # Don't run from a failed upstream collector (avoid false freshness).
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -52,6 +51,77 @@ jobs:
           assert set(r['states'])=={'BTC','ETH'}
           print('V4.1 immutable paper-only observer complete')
           PY
+      - name: Preserve later verified source pair without rewriting original failed snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/v48_late_pair.py <<'PY'
+          """Append-only prospective recovery of a newly validated existing spot bar."""
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          import hashlib
+          import json
+          import sys
+
+          VERSION = "v4_8_late_pair_2026-10-26_01"
+
+          def utc(s):
+              x=datetime.fromisoformat(s.replace('Z','+00:00'))
+              if x.tzinfo is None: raise ValueError('naive timestamp')
+              return x.astimezone(timezone.utc)
+
+          def valid(x):
+              return (x.get('state') not in ('DATA_UNAVAILABLE',None) and not x.get('missing')
+                      and x.get('spot_price_observation_usable') is True
+                      and isinstance(x.get('reference_close_usdt'),(int,float))
+                      and x['reference_close_usdt']>0)
+
+          def recovery(root):
+              root=Path(root)
+              latest=json.loads((root/'latest.json').read_text(encoding='utf8'))
+              now=utc(latest['generated_utc'])
+              snapshots=root/'snapshots'
+              today=snapshots / f'{now.date().isoformat()}.jsonl'
+              past=[]
+              for day in (now.date()-timedelta(days=1),now.date()):
+                  file=snapshots/f'{day.isoformat()}.jsonl'
+                  if file.exists():
+                      past.extend(json.loads(line) for line in file.read_text(encoding='utf8').splitlines() if line.strip())
+              pending=[]
+              for sym in ('BTC','ETH'):
+                  candidate=latest['states'][sym]
+                  if candidate.get('symbol')!=sym or not valid(candidate):
+                      continue
+                  seen=utc(candidate['first_seen_utc']);bar=utc(candidate['spot_bar_end_utc'])
+                  if seen!=now or not (timedelta(0)<=now-bar<=timedelta(minutes=35)):
+                      continue
+                  previous=[x for x in past if x.get('symbol')==sym and
+                            x.get('spot_bar_end_utc')==candidate['spot_bar_end_utc']]
+                  if not previous or any(valid(x) for x in previous):
+                      continue
+                  if not any(not valid(x) and utc(x['first_seen_utc'])<seen for x in previous):
+                      continue
+                  event_id=hashlib.sha256((VERSION+'|'+sym+'|'+candidate['spot_bar_end_utc']).encode()).hexdigest()[:24]
+                  if any(x.get('snapshot_id')==event_id for x in past):
+                      continue
+                  recovered=dict(candidate)
+                  recovered.update({'snapshot_id':event_id,'validation_recovery_revision':VERSION,
+                                    'recovered_from_snapshot_ids':[x['snapshot_id'] for x in previous
+                                        if not valid(x) and utc(x['first_seen_utc'])<seen],
+                                    'original_spot_bar_first_seen_utc':min(x['first_seen_utc'] for x in previous)})
+                  pending.append(recovered)
+              if pending:
+                  today.parent.mkdir(parents=True,exist_ok=True)
+                  with today.open('a',encoding='utf8') as file:
+                      for item in pending:
+                          file.write(json.dumps(item,ensure_ascii=False,sort_keys=True,allow_nan=False)+'\n')
+              return pending
+
+          if __name__=='__main__':
+              x=recovery(sys.argv[1] if len(sys.argv)>1 else 'data/v4_monitor')
+              print('V4_8_LATE_PAIR '+json.dumps({'new_validated_pair_snapshots':len(x), 'symbols':[a['symbol'] for a in x]}))
+          PY
+          python /tmp/v48_late_pair.py data/v4_monitor
       - name: Query actual recent source workflow executions
         env:
           GH_TOKEN: ${{ github.token }}
@@ -59,8 +129,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/v4_upstream_runs
-          # Query only the last 27h. The audit needs the 24h window ending 90m ago;
-          # paginate to cover >100 results without downloading lifetime history.
           since="$(date -u -d '27 hours ago' '+%Y-%m-%dT%H:%M:%SZ')"
           for item in 'spot market_flow.yml' 'derivatives coinalyze.yml'; do
             set -- $item
@@ -99,20 +167,20 @@ jobs:
           for attempt in 1 2 3 4; do
             git add -A data/v4_monitor
             if git diff --cached --quiet; then echo 'No fresh input observation'; exit 0; fi
-            git commit -m 'Record prospective V4 paper observations and V4.2 source audit'
+            git commit -m 'Record prospective V4 paper observations and V4.8 late source verification'
             git fetch origin main
             if git rebase origin/main && git push origin HEAD:main; then
-              echo 'V4.2 prospective ledger and quality audit persisted'; exit 0
+              echo 'V4.8 append-only observations persisted'; exit 0
             fi
             git rebase --abort || true
             git reset --hard origin/main
             echo "Concurrent commit collision, retry $attempt by recomputing" >&2
             python v4_paper_monitor.py
+            python /tmp/v48_late_pair.py data/v4_monitor
             python v4_ops_audit.py \
               --spot-runs /tmp/v4_upstream_runs/spot.json \
               --derivatives-runs /tmp/v4_upstream_runs/derivatives.json
             sleep "$((attempt*3))"
           done
-          echo 'Cannot persist V4.2 audit' >&2
+          echo 'Cannot persist V4.8 append-only audit' >&2
           exit 1
-
