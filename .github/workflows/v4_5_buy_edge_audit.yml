@@ -1,0 +1,77 @@
+name: BTC ETH V4.5 Common Clock Buy Edge Research No Orders
+# V4_5_VERSION: 2026-10-26-locked-01
+# Compares V4.3 benchmark vs V4.4 spot recovery only after same-cohort future outcomes.
+# NO orders, NO executable fills, NO buy recommendations. Never mutates older ledgers.
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - BTC ETH V4.4 Sequential Market State Research No Orders
+    types: [completed]
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-eth-v45-locked-entry-quality
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout existing forward-only ledgers
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify V4.5 locked common-clock protocol
+        run: python -m unittest -v test_v4_5_buy_edge_audit.py
+      - name: Evaluate prospective same-cohort buy outcomes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python v4_5_buy_edge_audit.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('data/v4_monitor/buy_edge_v4_5')
+          report=json.loads((base/'latest.json').read_text('utf8'))
+          protocol=json.loads((base/'protocol.json').read_text('utf8'))
+          assert protocol['no_historical_backfill'] is True
+          assert protocol['locked_common_horizons_h']==[4,24]
+          assert report['research_only'] is True
+          assert report['orders_enabled'] is False and report['buy_alerts_enabled'] is False
+          assert set(report['by_symbol'])=={'BTC','ETH'}
+          assert report['status'] in ('BOOTSTRAPPED_NO_HISTORICAL_BACKFILL','PROSPECTIVE_MONITORING')
+          print('V4.5 read-only prospective cohort audit',report['status'])
+          PY
+      - name: Commit V4.5 observations only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4; do
+            git add -A data/v4_monitor/buy_edge_v4_5
+            if git diff --cached --quiet; then echo 'No new V4.5 comparison'; exit 0; fi
+            git commit -m 'Append locked V4.5 BTC ETH common-clock entry comparison (no orders)'
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              echo 'V4.5 audit persisted'; exit 0
+            fi
+            git rebase --abort || true
+            git reset --hard origin/main
+            python v4_5_buy_edge_audit.py
+            sleep "$((attempt*3))"
+          done
+          echo 'Could not persist V4.5 research audit' >&2
+          exit 1
