@@ -1,16 +1,21 @@
 name: BTC ETH V4 Prospective Buy Timing Paper Watch
-# V4_MONITOR_VERSION: 2026-10-26-01
-# No orders, no buy alerts, no live exchange API trading keys.
+# V4_2_MONITOR_VERSION: 2026-10-26-01
+# Triggered by successful upstream data collection. Backstop cron may be delayed.
+# Study only: no exchange keys, no orders, no live buy alerts.
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - BTC ETH Market Flow 15min
+      - BTC ETH Coinalyze Derivatives
+    types: [completed]
   schedule:
-    # Market flow: :07/:22/:37/:52, Coinalyze: :12/:27/:42/:57 UTC.
-    # Extra delay is needed because Actions schedules are not guaranteed on time.
-    - cron: '4,19,34,49 * * * *'
+    - cron: '13,43 * * * *'  # additional fallback; actual GitHub time may drift
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: btc-eth-v4-prospective-paper-monitor
@@ -18,10 +23,12 @@ concurrency:
 
 jobs:
   paper_observe:
+    # Don't run from a failed upstream collector (avoid false freshness).
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - name: Checkout verified data and versioned paper ledger
+      - name: Checkout verified data and immutable paper ledger
         uses: actions/checkout@v4
         with:
           ref: main
@@ -29,9 +36,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Validate V4 logic without network or market orders
-        run: python -m unittest -v test_v4_paper_monitor.py
+      - name: Validate V4.1 time-causal buy research and V4.2 operations
+        run: |
+          python -m unittest -v test_v4_paper_monitor.py test_v4_ops_audit.py
       - name: Record prospective observations and due paper outcomes
+        shell: bash
         run: |
           set -euo pipefail
           python v4_paper_monitor.py
@@ -40,11 +49,48 @@ jobs:
           from pathlib import Path
           r=json.loads(Path('data/v4_monitor/latest.json').read_text('utf8'))
           assert r['research_only'] and not r['orders_enabled'] and not r['buy_alerts_enabled']
-          assert r['version']=='v4_prospective_paper_2026-10-26_01'
           assert set(r['states'])=={'BTC','ETH'}
-          print('Paper-only observation saved; no live orders sent')
+          print('V4.1 immutable paper-only observer complete')
           PY
-      - name: Store append-only paper audit in main branch
+      - name: Query actual recent source workflow executions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v4_upstream_runs
+          # Query only the last 27h. The audit needs the 24h window ending 90m ago;
+          # paginate to cover >100 results without downloading lifetime history.
+          since="$(date -u -d '27 hours ago' '+%Y-%m-%dT%H:%M:%SZ')"
+          for item in 'spot market_flow.yml' 'derivatives coinalyze.yml'; do
+            set -- $item
+            dest="/tmp/v4_upstream_runs/$1.json"
+            if gh api -X GET -f "created=>=$since" -F per_page=100 \
+                   --paginate --slurp "repos/${GITHUB_REPOSITORY}/actions/workflows/$2/runs" > "$dest"; then
+              echo "Read recent source workflow $2"
+            else
+              echo 'null' > "$dest"
+              echo "Source run API unavailable for $2 (not treated as zero starts)" >&2
+            fi
+          done
+      - name: Record V4.2 freshness and scheduled-start audit
+        env:
+          V4_UPSTREAM_WORKFLOW: ${{ github.event.workflow_run.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python v4_ops_audit.py \
+            --spot-runs /tmp/v4_upstream_runs/spot.json \
+            --derivatives-runs /tmp/v4_upstream_runs/derivatives.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('data/v4_monitor/operational_health.json').read_text('utf8'))
+          assert d['research_only'] is True and d['real_money_trading_enabled'] is False
+          assert set(d['assets'])=={'BTC','ETH'}
+          print('Operational quality status',d['status'])
+          PY
+      - name: Persist append-only paper observations and run audit
         shell: bash
         run: |
           set -euo pipefail
@@ -52,17 +98,21 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           for attempt in 1 2 3 4; do
             git add -A data/v4_monitor
-            if git diff --cached --quiet; then echo 'No new data'; exit 0; fi
-            git commit -m 'Append BTC ETH V4 prospective paper observations (no orders)'
+            if git diff --cached --quiet; then echo 'No fresh input observation'; exit 0; fi
+            git commit -m 'Record prospective V4 paper observations and V4.2 source audit'
             git fetch origin main
             if git rebase origin/main && git push origin HEAD:main; then
-              echo 'Prospective paper ledger persisted'; exit 0
+              echo 'V4.2 prospective ledger and quality audit persisted'; exit 0
             fi
             git rebase --abort || true
             git reset --hard origin/main
-            echo "Concurrent push retry $attempt: recomputing ledger from updated main" >&2
+            echo "Concurrent commit collision, retry $attempt by recomputing" >&2
             python v4_paper_monitor.py
+            python v4_ops_audit.py \
+              --spot-runs /tmp/v4_upstream_runs/spot.json \
+              --derivatives-runs /tmp/v4_upstream_runs/derivatives.json
             sleep "$((attempt*3))"
           done
-          echo 'Unable to save new observations after 4 retries' >&2
+          echo 'Cannot persist V4.2 audit' >&2
           exit 1
+
