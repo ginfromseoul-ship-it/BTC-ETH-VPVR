@@ -18,6 +18,7 @@ SYMBOLS = ('BTC', 'ETH')
 HORIZONS = (1, 4, 24)
 COSTS_PCT = (0.14, 0.22, 0.35)
 VERSION = 'v4_prospective_paper_2026-10-26_01'
+TIMING_GUARD_REVISION = '2026-10-26-v4.1-first-seen-proxy'
 MAX_SOURCE_AGE_MIN = 35
 MAX_BAR_SKEW_MIN = 15
 ENTRY_DEADLINE_MIN = 45
@@ -256,27 +257,34 @@ def pipeline(spot,deriv,asof,out):
     for s in allsnap:
         if s['state']!='PAPER_CANDIDATE_UNVALIDATED':continue
         signal_time=parse_time(s['spot_bar_end_utc'])
+        signal_seen=parse_time(s['first_seen_utc'])
+        # Anchor cohort to actual first-seen decision time, not the already closed source bar.
         last=last_cohort_signal.get(s['symbol'])
-        if last is not None and signal_time-last<timedelta(hours=24):continue
-        last_cohort_signal[s['symbol']]=signal_time
+        if last is not None and signal_seen-last<timedelta(hours=24):continue
+        last_cohort_signal[s['symbol']]=signal_seen
         selected_cohorts+=1
         if s['snapshot_id'] in entries_by:continue
-        signal_time=parse_time(s['spot_bar_end_utc'])
         next_snap=next((x for x in allsnap if x['symbol']==s['symbol']
-                         and parse_time(x['spot_bar_end_utc'])>signal_time
-                         and parse_time(x['spot_bar_end_utc'])<=signal_time+timedelta(minutes=ENTRY_DEADLINE_MIN)
-                         and x['reference_close_usdt']>0
-                         and x['first_seen_utc']>s['first_seen_utc']),None)
+                         # The *price observation* itself must be later than when
+                         # the research candidate first became known. A bar
+                         # between signal close and first_seen is NOT actionable.
+                         and parse_time(x['spot_bar_end_utc'])>signal_seen
+                         and parse_time(x['spot_bar_end_utc'])<=signal_seen+timedelta(minutes=ENTRY_DEADLINE_MIN)
+                         and parse_time(x['first_seen_utc'])>signal_seen
+                         and parse_time(x['first_seen_utc'])<=signal_seen+timedelta(minutes=ENTRY_DEADLINE_MIN)
+                         and parse_time(x['first_seen_utc'])>=parse_time(x['spot_bar_end_utc'])
+                         and x['reference_close_usdt']>0),None)
         if next_snap is None:
-            if asof>signal_time+timedelta(minutes=ENTRY_DEADLINE_MIN):
+            if asof>signal_seen+timedelta(minutes=ENTRY_DEADLINE_MIN):
                 entries.append({'snapshot_id':s['snapshot_id'],'symbol':s['symbol'],
                                 'signal_utc':s['spot_bar_end_utc'],
-                                'entry_utc':None,'entry_first_seen_utc':None,
+                                'signal_first_seen_utc':s['first_seen_utc'],
+                                'entry_utc':None,'entry_price_bar_end_utc':None,'entry_first_seen_utc':None,
                                 'entry_reference_price_usdt':None,'entry_reference_risk_pct':None,
                                 'invalidation_reference_usdt':s.get('evidence',{}).get('close_based_invalidation_reference_usdt'),
                                 'target_2r_reference_usdt':None,
                                 'paper_entry_status':'UNAVAILABLE_NO_TIMELY_NEXT_OBSERVATION',
-                                'entry_method':'no next timely recorded observation; excluded, not fabricated',
+                                'entry_method':'no causally later and timely recorded observation; excluded, not fabricated',
                                 'model_version':VERSION,'state':s['state']})
             continue
         ep=next_snap['reference_close_usdt']
@@ -284,7 +292,11 @@ def pipeline(spot,deriv,asof,out):
         riskpct=round(100*(ep-floor)/ep,4) if floor and ep>0 else None
         eligible=riskpct is not None and 0<riskpct<=3.0
         entries.append({'snapshot_id':s['snapshot_id'],'symbol':s['symbol'],
-                        'entry_utc':next_snap['spot_bar_end_utc'],
+                        'signal_first_seen_utc':s['first_seen_utc'],
+                        # Entry is an observed paper MARK, NOT an exchange fill.
+                        # Time anchor is when the price became available to our system.
+                        'entry_utc':next_snap['first_seen_utc'],
+                        'entry_price_bar_end_utc':next_snap['spot_bar_end_utc'],
                         'entry_first_seen_utc':next_snap['first_seen_utc'],
                         'entry_reference_price_usdt':ep,
                         'entry_reference_risk_pct':riskpct,
@@ -292,7 +304,7 @@ def pipeline(spot,deriv,asof,out):
                         'target_2r_reference_usdt':round(ep+2*(ep-floor),6) if eligible else None,
                         'paper_entry_status':'ELIGIBLE_PAPER_REFERENCE' if eligible else 'BLOCKED_BY_ENTRY_RISK',
                         'signal_utc':s['spot_bar_end_utc'],'state':s['state'],
-                        'entry_method':'first later recorded 15min spot close; reference proxy NOT fill',
+                        'entry_method':'first later price bar whose close AND first-seen time follow signal first_seen; proxy NOT fill',
                         'model_version':VERSION})
     append_new(daily(out,'entries',today),entries,'snapshot_id')
     entries=existing_entries+entries
@@ -309,17 +321,20 @@ def pipeline(spot,deriv,asof,out):
             if oid in outcome_ids:continue
             options=[x for x in allsnap if x['symbol']==entry['symbol'] and x['reference_close_usdt']>0
                      and target<=parse_time(x['spot_bar_end_utc'])<=target+timedelta(minutes=OUTCOME_DEADLINE_MIN)
-                     and parse_time(x['first_seen_utc'])>=parse_time(x['spot_bar_end_utc'])]
+                     and parse_time(x['first_seen_utc'])>=parse_time(x['spot_bar_end_utc'])
+                     and parse_time(x['first_seen_utc'])<=target+timedelta(minutes=OUTCOME_DEADLINE_MIN)]
             outcome=None
             if options:
                 x=min(options,key=lambda v:v['spot_bar_end_utc'])
                 raw=100*(x['reference_close_usdt']/entry_px-1)
                 outcome={'status':'OBSERVED_PROXY','price_utc':x['spot_bar_end_utc'],
+                         'price_first_seen_utc':x['first_seen_utc'],
                          'price_usdt':x['reference_close_usdt'],
                          'gross_return_pct':round(raw,5),
                          'net_return_pct_by_cost':{str(cost):round(raw-cost,5) for cost in COSTS_PCT}}
             elif asof>target+timedelta(minutes=OUTCOME_DEADLINE_MIN):
                 outcome={'status':'UNAVAILABLE_MISSING_TIMELY_OBSERVATION','price_utc':None,
+                         'price_first_seen_utc':None,
                          'price_usdt':None,'gross_return_pct':None,'net_return_pct_by_cost':None}
             if outcome:
                 outcomes.append({'outcome_id':oid,'snapshot_id':entry['snapshot_id'],'symbol':entry['symbol'],
@@ -328,7 +343,8 @@ def pipeline(spot,deriv,asof,out):
                 outcome_ids.add(oid)
     append_new(daily(out,'outcomes',today),outcomes,'outcome_id')
     current={x['symbol']:x for x in evaluated}
-    result={'version':VERSION,'generated_utc':iso(asof),'cadence':'scheduled approximately 15min; not tick realtime',
+    result={'version':VERSION,'timing_guard_revision':TIMING_GUARD_REVISION,
+            'generated_utc':iso(asof),'cadence':'scheduled approximately 15min; not tick realtime',
             'research_only':True,'buy_alerts_enabled':False,'orders_enabled':False,
             'executable_buy_prices_available':False,
             'input_sources':{'spot_collected_utc':spot.get('collected_utc'),
@@ -340,6 +356,7 @@ def pipeline(spot,deriv,asof,out):
             'limitations':['Prospective observations begin when workflow first runs; historical 24m is NOT used to claim live performance',
                            '15m scheduled REST snapshots do not establish absorption/order cancellations or actual execution timing',
                            'Liquidation figures are vendor interval aggregates, not comprehensive forceOrder tape',
+                           'Paper entry mark requires both source bar close and first-seen to be strictly after signal FIRST SEEN; the price is still a delayed historical close, not an executable quote',
                            'Entry/exit are NEXT RECORDED spot closes and can be delayed or missing; no fills/stop execution modeled',
                            'Paper returns are simple notional differences minus illustrative roundtrip costs, not realized P&L',
                            'Features use asynchronous spot/futures data within up to 15m; only research proxy',

@@ -158,6 +158,32 @@ class MonitorTests(unittest.TestCase):
             self.assertTrue(any(o['status']=='UNAVAILABLE_MISSING_TIMELY_OBSERVATION' for o in oc))
             self.assertEqual(out['new_forward_outcomes'],2)
 
+    def test_observed_late_cannot_use_earlier_closed_bar_as_entry(self):
+        # Critical real-world jitter case: price closed before the signal became
+        # visible to our system, even though it is later than the source shock bar.
+        with tempfile.TemporaryDirectory() as td:
+            spot, fut=fixture(ASOF)
+            signal_first_seen=ASOF+timedelta(minutes=20)
+            initial=pipeline(spot,fut,signal_first_seen,td)
+            self.assertEqual(initial['states']['BTC']['state'],'PAPER_CANDIDATE_UNVALIDATED')
+
+            # Next available result has a bar close at +15m, but the signal was
+            # first seen at +20m. Using +15m would be retrospective cheating.
+            spot, fut=fixture(ASOF+timedelta(minutes=15))
+            second=pipeline(spot,fut,ASOF+timedelta(minutes=30),td)
+            self.assertEqual(second['new_paper_entries'],0)
+            self.assertEqual(parse_jsonl(Path(td)/'entries'/'2026-10-26.jsonl'),[])
+
+            spot, fut=fixture(ASOF+timedelta(minutes=30))
+            third=pipeline(spot,fut,ASOF+timedelta(minutes=45),td)
+            self.assertEqual(third['new_paper_entries'],2)
+            entries=parse_jsonl(Path(td)/'entries'/'2026-10-26.jsonl')
+            for e in entries:
+                self.assertEqual(e['signal_first_seen_utc'],iso(signal_first_seen))
+                self.assertEqual(e['entry_price_bar_end_utc'],iso(ASOF+timedelta(minutes=30)))
+                self.assertEqual(e['entry_first_seen_utc'],iso(ASOF+timedelta(minutes=45)))
+                self.assertEqual(e['entry_utc'],e['entry_first_seen_utc'])
+
     def test_no_entry_if_first_available_snapshot_too_late(self):
         with tempfile.TemporaryDirectory() as td:
             spot,fut=fixture();pipeline(spot,fut,ASOF,td)
