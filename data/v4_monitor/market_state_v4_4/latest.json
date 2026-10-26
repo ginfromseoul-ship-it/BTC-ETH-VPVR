@@ -1,21 +1,22 @@
 {
   "version": "v4_4_sequential_market_state_2026-10-26_locked_01",
-  "status": "BOOTSTRAPPED_NO_HISTORICAL_BACKFILL",
-  "generated_utc": "2026-10-26T05:20:28Z",
+  "status": "PROSPECTIVE_RESEARCH_ACTIVE",
+  "generated_utc": "2026-10-26T05:35:10Z",
+  "inception_utc": "2026-10-26T05:20:28Z",
   "research_only": true,
   "orders_enabled": false,
   "buy_alerts_enabled": false,
-  "new_decisions": 0,
+  "new_decisions": 2,
   "new_entries": 0,
   "new_outcomes": 0,
   "by_symbol": {
     "BTC": {
-      "decisions": 0,
+      "decisions": 1,
       "stages": {
         "NO_RECENT_DIP": 0,
         "BASELINE_PENDING": 0,
         "GAP_UNVERIFIED": 0,
-        "SOURCE_UNVERIFIED": 0,
+        "SOURCE_UNVERIFIED": 1,
         "SELLING_CONTINUES_PROXY": 0,
         "SELL_PRESSURE_EASING_PROXY": 0,
         "SPOT_RECOVERY_PROXY": 0,
@@ -23,18 +24,23 @@
         "MIXED_WAIT": 0
       },
       "paper_candidates": 0,
-      "last_decision": null,
+      "last_decision": {
+        "stage": "SOURCE_UNVERIFIED",
+        "decided_at_utc": "2026-10-26T05:35:10Z",
+        "reference_close_usdt": 80172.0,
+        "entry_signal": false
+      },
       "paper_entries": 0,
       "24h_marks": 0,
       "mean_24h_net_0_14pct": null
     },
     "ETH": {
-      "decisions": 0,
+      "decisions": 1,
       "stages": {
         "NO_RECENT_DIP": 0,
         "BASELINE_PENDING": 0,
         "GAP_UNVERIFIED": 0,
-        "SOURCE_UNVERIFIED": 0,
+        "SOURCE_UNVERIFIED": 1,
         "SELLING_CONTINUES_PROXY": 0,
         "SELL_PRESSURE_EASING_PROXY": 0,
         "SPOT_RECOVERY_PROXY": 0,
@@ -42,10 +48,24 @@
         "MIXED_WAIT": 0
       },
       "paper_candidates": 0,
-      "last_decision": null,
+      "last_decision": {
+        "stage": "SOURCE_UNVERIFIED",
+        "decided_at_utc": "2026-10-26T05:35:10Z",
+        "reference_close_usdt": 2323.69,
+        "entry_signal": false
+      },
       "paper_entries": 0,
       "24h_marks": 0,
       "mean_24h_net_0_14pct": null
     }
-  }
+  },
+  "limitations": [
+    "No order-by-order absorption, no verified liquidation exhaustion, no true traded low.",
+    "V4.4 exploratory thresholds not fitted or validated as predictive buy advantage.",
+    "References are subsequent recorded spot 5-minute CLOSES, never executable fills.",
+    "No actual orderbook persistence/cancellations, position sizing, futures funding or liquidation modeling.",
+    "Entry and outcome times use first-observed source snapshots; missing price remains missing.",
+    "Decisions made at pipeline execution, not earlier candle timestamp.",
+    "V4.3 cohort accounting remains independent; compare after enough forward pairs mature."
+  ]
 }
