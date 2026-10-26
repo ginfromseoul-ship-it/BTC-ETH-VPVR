@@ -1,0 +1,126 @@
+{
+  "version": "v4_3_cohort_comparison_2026-10-26_locked_01",
+  "generated_utc": "2026-10-26T04:58:54Z",
+  "protocol": "forward_only_from_bootstrap",
+  "research_only": true,
+  "orders_enabled": false,
+  "buy_alerts_enabled": false,
+  "comparison_kind": "Same ex-ante downtrend cohort; three predefined decision policies",
+  "horizons_h": [
+    1,
+    4,
+    24
+  ],
+  "cost_scenarios_pct": [
+    0.14,
+    0.22,
+    0.35
+  ],
+  "by_symbol": {
+    "BTC": {
+      "cohorts_started": 0,
+      "by_arm": {
+        "DIP_NEXT": {
+          "resolved_arm_count": 0,
+          "entered": 0,
+          "skipped_no_signal": 0,
+          "unavailable_entry": 0,
+          "24h_outcomes": 0,
+          "mean_24h_net_0_14pct": null
+        },
+        "WATCH_NEXT": {
+          "resolved_arm_count": 0,
+          "entered": 0,
+          "skipped_no_signal": 0,
+          "unavailable_entry": 0,
+          "24h_outcomes": 0,
+          "mean_24h_net_0_14pct": null
+        },
+        "CONFIRM_NEXT": {
+          "resolved_arm_count": 0,
+          "entered": 0,
+          "skipped_no_signal": 0,
+          "unavailable_entry": 0,
+          "24h_outcomes": 0,
+          "mean_24h_net_0_14pct": null
+        }
+      },
+      "paired_diagnostics": {
+        "WATCH_NEXT": {
+          "matched_cohorts": 0,
+          "mean_net_24h_difference_vs_dip_pp": null,
+          "skipped_confirmations_with_baseline_24h": 0,
+          "baseline_24h_mean_net_on_no_signal_cohorts": null,
+          "baseline_profitable_pct_on_no_signal_cohorts": null,
+          "limitation": "Entry times differ; this is not a same-clock liquidation/stop-adjusted P&L comparison."
+        },
+        "CONFIRM_NEXT": {
+          "matched_cohorts": 0,
+          "mean_net_24h_difference_vs_dip_pp": null,
+          "skipped_confirmations_with_baseline_24h": 0,
+          "baseline_24h_mean_net_on_no_signal_cohorts": null,
+          "baseline_profitable_pct_on_no_signal_cohorts": null,
+          "limitation": "Entry times differ; this is not a same-clock liquidation/stop-adjusted P&L comparison."
+        }
+      }
+    },
+    "ETH": {
+      "cohorts_started": 0,
+      "by_arm": {
+        "DIP_NEXT": {
+          "resolved_arm_count": 0,
+          "entered": 0,
+          "skipped_no_signal": 0,
+          "unavailable_entry": 0,
+          "24h_outcomes": 0,
+          "mean_24h_net_0_14pct": null
+        },
+        "WATCH_NEXT": {
+          "resolved_arm_count": 0,
+          "entered": 0,
+          "skipped_no_signal": 0,
+          "unavailable_entry": 0,
+          "24h_outcomes": 0,
+          "mean_24h_net_0_14pct": null
+        },
+        "CONFIRM_NEXT": {
+          "resolved_arm_count": 0,
+          "entered": 0,
+          "skipped_no_signal": 0,
+          "unavailable_entry": 0,
+          "24h_outcomes": 0,
+          "mean_24h_net_0_14pct": null
+        }
+      },
+      "paired_diagnostics": {
+        "WATCH_NEXT": {
+          "matched_cohorts": 0,
+          "mean_net_24h_difference_vs_dip_pp": null,
+          "skipped_confirmations_with_baseline_24h": 0,
+          "baseline_24h_mean_net_on_no_signal_cohorts": null,
+          "baseline_profitable_pct_on_no_signal_cohorts": null,
+          "limitation": "Entry times differ; this is not a same-clock liquidation/stop-adjusted P&L comparison."
+        },
+        "CONFIRM_NEXT": {
+          "matched_cohorts": 0,
+          "mean_net_24h_difference_vs_dip_pp": null,
+          "skipped_confirmations_with_baseline_24h": 0,
+          "baseline_24h_mean_net_on_no_signal_cohorts": null,
+          "baseline_profitable_pct_on_no_signal_cohorts": null,
+          "limitation": "Entry times differ; this is not a same-clock liquidation/stop-adjusted P&L comparison."
+        }
+      }
+    }
+  },
+  "limitations": [
+    "Prospective observations only: existing V4 historical snapshots pre-bootstrap are never reclassified as decisions.",
+    "All reference prices are observed Binance spot 5m closes, NOT executable futures fills.",
+    "No intrabar risk, liquidation, funding, stop slippage, brokerage execution or leverage simulation.",
+    "Signal detection and entry require separate recorded snapshots; missing timely snapshots are not fabricated.",
+    "Baseline has no signal filter; watch and confirm must be counted as NO_SIGNAL when not triggered.",
+    "Per-arm 24h outcomes follow their own entry timestamps; paired differences are diagnostic not risk-adjusted alpha.",
+    "V4 thresholds were informed by previous history; only genuinely new observations test new predictive value.",
+    "No live orders, no actionable buy alerts, no assumption that orderbook snapshot demonstrates absorption."
+  ],
+  "status": "BOOTSTRAPPED_NO_HISTORICAL_BACKFILL"
+}
