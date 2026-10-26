@@ -1,4 +1,3 @@
-
 name: BTC ETH Coinalyze Derivatives
 
 on:
@@ -32,13 +31,30 @@ jobs:
           COINALYZE_API_KEY: ${{ secrets.COINALYZE_API_KEY }}
         run: python coinalyze_collector.py
 
-      - name: Save results
+      - name: Save results with concurrent commit retry
+        shell: bash
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/coinalyze_derivatives_latest.json
-          if ! git diff --cached --quiet; then
-            git commit -m "Update futures derivatives data"
-            git pull --rebase origin main
-            git push origin HEAD:main
+          if git diff --cached --quiet; then
+            echo "No changed derivatives data"
+            exit 0
           fi
+          git commit -m "Update futures derivatives data"
+          for attempt in 1 2 3 4 5 6; do
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              echo "Rebase conflict: source data preserved, no forced push" >&2
+              exit 1
+            fi
+            if git push origin HEAD:main; then
+              echo "Derivatives saved on attempt $attempt"
+              exit 0
+            fi
+            sleep "$((attempt*2))"
+          done
+          echo "Could not persist derivatives after six attempts" >&2
+          exit 1
