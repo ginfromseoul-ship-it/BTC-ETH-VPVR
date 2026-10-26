@@ -1,0 +1,85 @@
+{
+  "version": "v4_prospective_paper_2026-10-26_01",
+  "generated_utc": "2026-10-26T03:15:34Z",
+  "cadence": "scheduled approximately 15min; not tick realtime",
+  "research_only": true,
+  "buy_alerts_enabled": false,
+  "orders_enabled": false,
+  "executable_buy_prices_available": false,
+  "input_sources": {
+    "spot_collected_utc": "2026-10-26T02:55:09.095000Z",
+    "futures_collected_utc": "2026-10-26T03:11:04Z"
+  },
+  "states": {
+    "BTC": {
+      "version": "v4_prospective_paper_2026-10-26_01",
+      "symbol": "BTC",
+      "first_seen_utc": "2026-10-26T03:15:34Z",
+      "spot_bar_end_utc": "2026-10-26T02:55:00Z",
+      "futures_bar_end_utc": "2026-10-26T03:10:00Z",
+      "reference_close_usdt": 79572.77,
+      "state": "MIXED_WAIT",
+      "research_only": true,
+      "not_an_order_or_buy_recommendation": true,
+      "evidence": {
+        "spot_buy_share_1h_pct": 46.453,
+        "spot_buy_share_last15m_pct": 56.3254,
+        "futures_buy_share_1h_pct": 51.234,
+        "spot_price_change_4h_pct": -1.2083,
+        "oi_native_change_1h_pct": 0.1573,
+        "reported_long_liquidations_1h_usd": 389744.03,
+        "reported_short_liquidations_1h_usd": 10528.15,
+        "depth_bid_ask_ratio_0_1pct_snapshot": 1.3594,
+        "price_distance_from_recent_close_low_pct": 0.0686,
+        "close_based_invalidation_reference_usdt": 79359.20352,
+        "risk_to_reference_pct": 0.2684,
+        "price_trigger_hypothesis": "4h dip <= -1pct for either symbol; shared research gate"
+      },
+      "missing": [],
+      "spot_price_observation_usable": true,
+      "snapshot_id": "5c5c0e6c89c145210c04fdfb"
+    },
+    "ETH": {
+      "version": "v4_prospective_paper_2026-10-26_01",
+      "symbol": "ETH",
+      "first_seen_utc": "2026-10-26T03:15:34Z",
+      "spot_bar_end_utc": "2026-10-26T02:55:00Z",
+      "futures_bar_end_utc": "2026-10-26T03:10:00Z",
+      "reference_close_usdt": 2302.82,
+      "state": "MIXED_WAIT",
+      "research_only": true,
+      "not_an_order_or_buy_recommendation": true,
+      "evidence": {
+        "spot_buy_share_1h_pct": 42.528,
+        "spot_buy_share_last15m_pct": 40.3831,
+        "futures_buy_share_1h_pct": 50.469,
+        "spot_price_change_4h_pct": -1.8142,
+        "oi_native_change_1h_pct": 0.5919,
+        "reported_long_liquidations_1h_usd": 481484.69,
+        "reported_short_liquidations_1h_usd": 8303.94,
+        "depth_bid_ask_ratio_0_1pct_snapshot": 1.0042,
+        "price_distance_from_recent_close_low_pct": 0.0308,
+        "close_based_invalidation_reference_usdt": 2297.50578,
+        "risk_to_reference_pct": 0.2308,
+        "price_trigger_hypothesis": "4h dip <= -1pct for either symbol; shared research gate"
+      },
+      "missing": [],
+      "spot_price_observation_usable": true,
+      "snapshot_id": "7d43e861379c215d86a3f5d9"
+    }
+  },
+  "new_snapshots_saved": 2,
+  "candidate_cohort_cooldown_hours": 24,
+  "new_paper_entries": 0,
+  "new_forward_outcomes": 0,
+  "limitations": [
+    "Prospective observations begin when workflow first runs; historical 24m is NOT used to claim live performance",
+    "15m scheduled REST snapshots do not establish absorption/order cancellations or actual execution timing",
+    "Liquidation figures are vendor interval aggregates, not comprehensive forceOrder tape",
+    "Entry/exit are NEXT RECORDED spot closes and can be delayed or missing; no fills/stop execution modeled",
+    "Paper returns are simple notional differences minus illustrative roundtrip costs, not realized P&L",
+    "Features use asynchronous spot/futures data within up to 15m; only research proxy",
+    "Candidate paper cohort has 24h per-symbol cooldown to reduce overlapping outcomes",
+    "No profitable buy edge established by prior V3; candidate does NOT mean buy"
+  ]
+}
