@@ -1,52 +1,52 @@
 {
-  "generated_utc": "2026-10-26T21:51:21Z",
+  "generated_utc": "2026-10-27T21:52:22Z",
   "schema_version": 2,
-  "status": "ready_with_source_gaps",
+  "status": "failed",
   "database_export": "GitHub Actions artifact btc-eth-market-research-v2, 7 day retention",
   "guard_seconds": 300,
   "guard_warning": "Historical timestamp assumed available after +5m. This is not independently measured: verify archived release timings before trusting trading signals.",
   "missingness_policy": "Missing Binance OI stays NULL. Never carry forward missing 5m OI, and do not substitute Coinalyze OI; actual funding stays separate from provider estimate.",
   "source_time_semantics": "Binance OI t is observation end; Binance funding t is settlement event time; research row end_t is decision-candle close.",
   "backtest_limit": "No historical liquidation orderbook reconstruction; exchange corrections and vendor publication lag not independently audited.",
-  "source_files": 1512,
-  "source_sha256": "06460c6b15c2ae2fefa06257dd31a8d53e92397a3d6eb68fe72107bbc2a66436",
+  "source_files": 1514,
+  "source_sha256": "2e7c66d48abaedff6bfa354b9c77b628e32748e02bd915adeef14aa9b7514d46",
   "coverage": {
     "BTC": {
       "spot_5m": {
-        "observed": 217694,
+        "observed": 217982,
         "first_utc": "2024-10-01T00:00:00Z",
-        "last_utc": "2026-10-26T21:05:00Z",
-        "expected_in_observed_span": 217694,
+        "last_utc": "2026-10-27T21:05:00Z",
+        "expected_in_observed_span": 217982,
         "missing_in_span": 0,
         "coverage_pct": 100.0
       },
       "futures_5m": {
-        "observed": 217694,
+        "observed": 217976,
         "first_utc": "2024-10-01T00:00:00Z",
-        "last_utc": "2026-10-26T21:05:00Z",
-        "expected_in_observed_span": 217694,
-        "missing_in_span": 0,
-        "coverage_pct": 100.0
+        "last_utc": "2026-10-27T21:05:00Z",
+        "expected_in_observed_span": 217982,
+        "missing_in_span": 6,
+        "coverage_pct": 99.9972
       },
       "oi_15m": {
-        "observed": 549,
+        "observed": 645,
         "first_utc": "2026-10-21T03:45:00Z",
-        "last_utc": "2026-10-26T20:45:00Z"
+        "last_utc": "2026-10-27T20:45:00Z"
       },
       "liquidations_15m": {
-        "observed": 461,
+        "observed": 540,
         "first_utc": "2026-10-21T04:30:00Z",
-        "last_utc": "2026-10-26T20:45:00Z"
+        "last_utc": "2026-10-27T19:45:00Z"
       },
       "liquidations_1h": {
-        "observed": 137,
+        "observed": 160,
         "first_utc": "2026-10-21T04:00:00Z",
-        "last_utc": "2026-10-26T20:00:00Z"
+        "last_utc": "2026-10-27T19:00:00Z"
       },
       "funding_1h": {
-        "observed": 137,
+        "observed": 161,
         "first_utc": "2026-10-21T04:00:00Z",
-        "last_utc": "2026-10-26T20:00:00Z"
+        "last_utc": "2026-10-27T20:00:00Z"
       },
       "binance_oi_5m": {
         "observed": 217108,
@@ -64,40 +64,40 @@
     },
     "ETH": {
       "spot_5m": {
-        "observed": 217694,
+        "observed": 217982,
         "first_utc": "2024-10-01T00:00:00Z",
-        "last_utc": "2026-10-26T21:05:00Z",
-        "expected_in_observed_span": 217694,
+        "last_utc": "2026-10-27T21:05:00Z",
+        "expected_in_observed_span": 217982,
         "missing_in_span": 0,
         "coverage_pct": 100.0
       },
       "futures_5m": {
-        "observed": 217694,
+        "observed": 217976,
         "first_utc": "2024-10-01T00:00:00Z",
-        "last_utc": "2026-10-26T21:05:00Z",
-        "expected_in_observed_span": 217694,
-        "missing_in_span": 0,
-        "coverage_pct": 100.0
+        "last_utc": "2026-10-27T21:05:00Z",
+        "expected_in_observed_span": 217982,
+        "missing_in_span": 6,
+        "coverage_pct": 99.9972
       },
       "oi_15m": {
-        "observed": 549,
+        "observed": 645,
         "first_utc": "2026-10-21T03:45:00Z",
-        "last_utc": "2026-10-26T20:45:00Z"
+        "last_utc": "2026-10-27T20:45:00Z"
       },
       "liquidations_15m": {
-        "observed": 485,
+        "observed": 567,
         "first_utc": "2026-10-21T03:45:00Z",
-        "last_utc": "2026-10-26T20:45:00Z"
+        "last_utc": "2026-10-27T20:30:00Z"
       },
       "liquidations_1h": {
-        "observed": 136,
+        "observed": 160,
         "first_utc": "2026-10-21T04:00:00Z",
-        "last_utc": "2026-10-26T20:00:00Z"
+        "last_utc": "2026-10-27T20:00:00Z"
       },
       "funding_1h": {
-        "observed": 137,
+        "observed": 161,
         "first_utc": "2026-10-21T04:00:00Z",
-        "last_utc": "2026-10-26T20:00:00Z"
+        "last_utc": "2026-10-27T20:00:00Z"
       },
       "binance_oi_5m": {
         "observed": 216816,
@@ -116,32 +116,31 @@
   },
   "table_counts": {
     "BTC": {
-      "spot_5m": 217694,
-      "futures_5m": 217694,
-      "oi_15m": 549,
-      "liquidations_15m": 461,
-      "liquidations_1h": 137,
-      "funding_1h": 137,
+      "spot_5m": 217982,
+      "futures_5m": 217976,
+      "oi_15m": 645,
+      "liquidations_15m": 540,
+      "liquidations_1h": 160,
+      "funding_1h": 161,
       "binance_oi_5m": 217108,
       "binance_funding_settlements": 2190,
-      "research_5m": 217694,
+      "research_5m": 217976,
       "research_5m_with_binance_oi": 217108,
       "research_5m_with_actual_funding": 210720
     },
     "ETH": {
-      "spot_5m": 217694,
-      "futures_5m": 217694,
-      "oi_15m": 549,
-      "liquidations_15m": 485,
-      "liquidations_1h": 136,
-      "funding_1h": 137,
+      "spot_5m": 217982,
+      "futures_5m": 217976,
+      "oi_15m": 645,
+      "liquidations_15m": 567,
+      "liquidations_1h": 160,
+      "funding_1h": 161,
       "binance_oi_5m": 216816,
       "binance_funding_settlements": 2190,
-      "research_5m": 217694,
+      "research_5m": 217976,
       "research_5m_with_binance_oi": 216816,
       "research_5m_with_actual_funding": 210720
     }
   },
-  "sqlite_bytes": 197394432,
-  "sqlite_sha256": "1b7fd562a58bb11670e7c2015c2c262d3674ebe841cb1661f4df8cb21d7ecfce"
+  "error": "ValueError: core gap BTC/futures_5m"
 }
