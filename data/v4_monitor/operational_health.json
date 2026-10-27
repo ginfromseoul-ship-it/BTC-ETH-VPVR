@@ -1,27 +1,27 @@
 {
   "version": "v4_2_operational_2026-10-26_01",
-  "audit_utc": "2026-10-27T13:13:18Z",
-  "status": "BLOCKED",
-  "audit_run_id": "40510104911-1",
+  "audit_utc": "2026-10-27T13:30:46Z",
+  "status": "DEGRADED_SCHEDULE",
+  "audit_run_id": "40512642568-1",
   "trigger": {
-    "event_name": "workflow_run",
-    "upstream_workflow": "BTC ETH Coinalyze Derivatives"
+    "event_name": "schedule",
+    "upstream_workflow": null
   },
-  "v4_monitor_generated_utc": "2026-10-27T13:13:14Z",
+  "v4_monitor_generated_utc": "2026-10-27T13:30:42Z",
   "observer_version": "v4_prospective_paper_2026-10-26_01",
-  "new_snapshots_saved": 0,
+  "new_snapshots_saved": 2,
   "new_paper_entries": 0,
   "new_forward_outcomes": 0,
   "sources": {
     "spot": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-26T11:43:18Z",
-      "observed_window_end_utc": "2026-10-27T11:43:18Z",
+      "observed_window_start_utc": "2026-10-26T12:00:46Z",
+      "observed_window_end_utc": "2026-10-27T12:00:46Z",
       "expected_slots": 96,
-      "observed_scheduled_starts": 30,
-      "approximate_start_coverage_pct": 31.25,
-      "scheduled_completed": 30,
-      "scheduled_success": 29,
+      "observed_scheduled_starts": 31,
+      "approximate_start_coverage_pct": 32.29,
+      "scheduled_completed": 31,
+      "scheduled_success": 30,
       "scheduled_failure": 1,
       "median_start_interval_min": 43.33,
       "largest_start_interval_min": 105.98,
@@ -29,45 +29,39 @@
     },
     "derivatives": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-26T11:43:18Z",
-      "observed_window_end_utc": "2026-10-27T11:43:18Z",
+      "observed_window_start_utc": "2026-10-26T12:00:46Z",
+      "observed_window_end_utc": "2026-10-27T12:00:46Z",
       "expected_slots": 96,
-      "observed_scheduled_starts": 35,
-      "approximate_start_coverage_pct": 36.46,
-      "scheduled_completed": 35,
-      "scheduled_success": 34,
+      "observed_scheduled_starts": 34,
+      "approximate_start_coverage_pct": 35.42,
+      "scheduled_completed": 34,
+      "scheduled_success": 33,
       "scheduled_failure": 1,
-      "median_start_interval_min": 38.97,
-      "largest_start_interval_min": 146.3,
+      "median_start_interval_min": 38.73,
+      "largest_start_interval_min": 88.02,
       "method": "Actual event=schedule runs created in a 24h window ending 90m ago; approximate count; no exact cron slot matching; historical schedule assumed unchanged."
     }
   },
   "assets": {
     "BTC": {
-      "status": "BLOCKED_OR_STALE",
-      "model_state": "DATA_UNAVAILABLE",
-      "spot_bar_age_minutes": 33.31,
-      "futures_bar_age_minutes": 3.31,
-      "spot_collector_age_minutes": 30.23,
-      "derivatives_collector_age_minutes": 0.39,
-      "cross_source_end_skew_minutes": 30.0,
-      "failed_checks": [
-        "cross_source_bar_skew_ok",
-        "usable_model_decision"
-      ]
+      "status": "FRESH_AND_USABLE",
+      "model_state": "NO_DOWNTURN_SETUP",
+      "spot_bar_age_minutes": 20.78,
+      "futures_bar_age_minutes": 20.78,
+      "spot_collector_age_minutes": 17.57,
+      "derivatives_collector_age_minutes": 17.86,
+      "cross_source_end_skew_minutes": 0.0,
+      "failed_checks": []
     },
     "ETH": {
-      "status": "BLOCKED_OR_STALE",
-      "model_state": "DATA_UNAVAILABLE",
-      "spot_bar_age_minutes": 33.31,
-      "futures_bar_age_minutes": 3.31,
-      "spot_collector_age_minutes": 30.23,
-      "derivatives_collector_age_minutes": 0.39,
-      "cross_source_end_skew_minutes": 30.0,
-      "failed_checks": [
-        "cross_source_bar_skew_ok",
-        "usable_model_decision"
-      ]
+      "status": "FRESH_AND_USABLE",
+      "model_state": "NO_DOWNTURN_SETUP",
+      "spot_bar_age_minutes": 20.78,
+      "futures_bar_age_minutes": 20.78,
+      "spot_collector_age_minutes": 17.57,
+      "derivatives_collector_age_minutes": 17.86,
+      "cross_source_end_skew_minutes": 0.0,
+      "failed_checks": []
     }
   },
   "research_only": true,
