@@ -1,0 +1,306 @@
+name: BTC ETH V4.9 Unique Bar Quality Audit No Orders
+# V4_9_READONLY: unique spot bars versus revisions, no historical backfill
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '47 */6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: btc-eth-v49-quality-audit
+  cancel-in-progress: false
+
+jobs:
+  unique_bar_quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout prospective records
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Write V4.9 standalone readonly audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/v49_quality.py <<'V49_PYTHON_CODE'
+          #!/usr/bin/env python3
+          """V4.9 prospective quality audit: unique market bars vs observation events.
+          Read-only; never alter ledgers. Backdated source revisions are never assumed.
+          """
+          from __future__ import annotations
+          import argparse
+          import json
+          from collections import Counter, defaultdict
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          from statistics import mean
+          
+          UTC = timezone.utc
+          SYMBOLS = ('BTC', 'ETH')
+          VERSION = 'v4_9_unique_bar_quality_2026-10-26_01'
+          V48_INCEPTION = datetime(2026, 10, 26, 7, 19, 14, tzinfo=UTC)
+          MIN_OBSERVED_BARS_PER_WINDOW = 8
+          INVALID_STATES = ('DATA_UNAVAILABLE',)
+          
+          
+          def parse_time(s):
+              if not isinstance(s, str):
+                  raise ValueError('missing UTC timestamp')
+              t = datetime.fromisoformat(s.replace('Z', '+00:00'))
+              if t.tzinfo is None:
+                  raise ValueError('naive timestamp')
+              return t.astimezone(UTC)
+          
+          
+          def iso(t):
+              return t.astimezone(UTC).isoformat(timespec='seconds').replace('+00:00', 'Z')
+          
+          
+          def valid_at_first_seen(rec):
+              if rec.get('state') in INVALID_STATES or not rec.get('state'):
+                  return False
+              if rec.get('missing') or rec.get('spot_price_observation_usable') is not True:
+                  return False
+              try:
+                  seen = parse_time(rec['first_seen_utc'])
+                  spot = parse_time(rec['spot_bar_end_utc'])
+                  fut = parse_time(rec['futures_bar_end_utc'])
+              except (KeyError, ValueError, TypeError):
+                  return False
+              if spot > seen or fut > seen:
+                  return False
+              if abs((spot-fut).total_seconds()) > 15*60:
+                  return False
+              return True
+          
+          
+          def read_snapshots(repo, now):
+              directory = Path(repo)/'data/v4_monitor/snapshots'
+              dedup = {}
+              rejected = 0
+              if not directory.exists():
+                  return [], rejected
+              cutoff = now-timedelta(days=4)
+              for path in sorted(directory.glob('*.jsonl')):
+                  if path.stem < (cutoff-timedelta(days=1)).date().isoformat() or path.stem > now.date().isoformat():
+                      continue
+                  for line in path.read_text(encoding='utf8').splitlines():
+                      if not line.strip():
+                          continue
+                      try:
+                          rec = json.loads(line)
+                          sym=rec['symbol']; sid=rec['snapshot_id']
+                          seen=parse_time(rec['first_seen_utc'])
+                          bar=parse_time(rec['spot_bar_end_utc'])
+                          if sym not in SYMBOLS or not sid or seen>now or seen<cutoff or bar>seen:
+                              rejected += 1;continue
+                      except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+                          rejected += 1; continue
+                      key=(sym,sid)
+                      if key not in dedup or seen<parse_time(dedup[key]['first_seen_utc']):
+                          dedup[key]=rec
+              return sorted(dedup.values(),key=lambda r:(r['first_seen_utc'],r['symbol'],r['snapshot_id'])),rejected
+          
+          
+          def read_decisions(repo,now):
+              directory=Path(repo)/'data/v4_monitor/market_state_v4_4/decisions'
+              if not directory.exists():return []
+              result={}
+              for path in sorted(directory.glob('*.jsonl')):
+                  if path.stem < (now-timedelta(days=4)).date().isoformat():continue
+                  for line in path.read_text(encoding='utf8').splitlines():
+                      try:
+                          x=json.loads(line)
+                          t=parse_time(x['decision_recorded_utc'])
+                          if x['symbol'] not in SYMBOLS or t>now:continue
+                          result.setdefault(x['decision_id'],(t,x))
+                      except (KeyError,ValueError,TypeError,json.JSONDecodeError):continue
+              return list(result.values())
+          
+          
+          def window_metrics(records,decisions,symbol,start,end):
+              # Group by immutable symbol+spot market-bar time across the full loaded
+              # history, and assign each bar to the window where it was FIRST observed.
+              # Changes after window-end cannot change that window's historical outcome.
+              by_bar=defaultdict(list)
+              selected_events=[]
+              for r in records:
+                  if r['symbol']!=symbol:continue
+                  t=parse_time(r['first_seen_utc'])
+                  if start<=t<end:selected_events.append(r)
+                  if t>=end:continue
+                  key=r['spot_bar_end_utc']
+                  by_bar[key].append(r)
+              anchored=[]
+              for bar, events in by_bar.items():
+                  events.sort(key=lambda r:(r['first_seen_utc'],r['snapshot_id']))
+                  first=parse_time(events[0]['first_seen_utc'])
+                  if start<=first<end:
+                      anchored.append((bar,events))
+              initial=eventual=recovered=0
+              delays=[];valid_at=[]; rescue_ids=[]
+              for bar,events in anchored:
+                  first_good=valid_at_first_seen(events[0])
+                  candidates=[r for r in events if valid_at_first_seen(r)]
+                  initial+=int(first_good)
+                  if candidates:
+                      eventual+=1
+                      first_usable=parse_time(candidates[0]['first_seen_utc'])
+                      valid_at.append(first_usable)
+                      if not first_good and first_usable>parse_time(events[0]['first_seen_utc']):
+                          recovered+=1
+                          delays.append((first_usable-parse_time(events[0]['first_seen_utc'])).total_seconds()/60)
+                          rescue_ids.append({'spot_bar_end_utc':bar,'first_seen_utc':events[0]['first_seen_utc'],'first_usable_utc':iso(first_usable)})
+              valid_at.sort()
+              gaps=[round((b-a).total_seconds()/60,2) for a,b in zip(valid_at,valid_at[1:])]
+              dcounts=Counter(r.get('stage','UNKNOWN') for t,r in decisions if r.get('symbol')==symbol and start<=t<end)
+              n_bars=len(anchored)
+              n_events=len(selected_events)
+              return {
+                  'window_start_utc':iso(start),'window_end_utc':iso(end),
+                  'unique_snapshot_events':n_events,
+                  'validated_snapshot_events':sum(valid_at_first_seen(r) for r in selected_events),
+                  'snapshot_event_valid_rate_pct':round(100*sum(valid_at_first_seen(r) for r in selected_events)/n_events,2) if n_events else None,
+                  'unique_spot_bars_first_seen':n_bars,
+                  'first_seen_valid_bars':initial,
+                  'eventually_valid_spot_bars_by_window_end':eventual,
+                  'unique_bar_initial_valid_rate_pct':round(initial/n_bars*100,2) if n_bars else None,
+                  'unique_bar_eventual_valid_rate_pct':round(eventual/n_bars*100,2) if n_bars else None,
+                  'recovered_invalid_to_valid_bars':recovered,
+                  'unresolved_bars':n_bars-eventual,
+                  'mean_recovery_delay_min':round(mean(delays),2) if delays else None,
+                  'max_recovery_delay_min':round(max(delays),2) if delays else None,
+                  'verified_unique_bar_pairs':len(gaps),
+                  'gaps_over_90min_between_first_usable_bars':sum(g>90 for g in gaps),
+                  'largest_gap_between_first_usable_bars_min':max(gaps) if gaps else None,
+                  'v44_decision_stages':dict(sorted(dcounts.items())),
+                  'v44_source_unverified_decisions':dcounts.get('SOURCE_UNVERIFIED',0),
+                  'v44_gap_unverified_decisions':dcounts.get('GAP_UNVERIFIED',0),
+                  'recovery_examples':rescue_ids[:5],
+              }
+          
+          
+          def evaluate(repo,now):
+              records, malformed=read_snapshots(repo,now)
+              decisions=read_decisions(repo,now)
+              recent_start=now-timedelta(hours=24)
+              old_start=now-timedelta(hours=48)
+              result={}
+              for s in SYMBOLS:
+                  cur=window_metrics(records,decisions,s,recent_start,now)
+                  prior=window_metrics(records,decisions,s,old_start,recent_start)
+                  ready=(old_start>=V48_INCEPTION and
+                         cur['unique_spot_bars_first_seen']>=MIN_OBSERVED_BARS_PER_WINDOW and
+                         prior['unique_spot_bars_first_seen']>=MIN_OBSERVED_BARS_PER_WINDOW)
+                  result[s]={
+                      'last_24h':cur,'previous_24h':prior,
+                      'comparability':'READY_DESCRIPTIVE_ONLY' if ready else 'INSUFFICIENT_POST_V48_WINDOWS',
+                      'unique_bar_eventual_valid_rate_change_pp':round(cur['unique_bar_eventual_valid_rate_pct']-prior['unique_bar_eventual_valid_rate_pct'],2) if ready else None,
+                      'unique_bar_initial_valid_rate_change_pp':round(cur['unique_bar_initial_valid_rate_pct']-prior['unique_bar_initial_valid_rate_pct'],2) if ready else None,
+                      'recovered_bar_count_change':cur['recovered_invalid_to_valid_bars']-prior['recovered_invalid_to_valid_bars'] if ready else None,
+                  }
+              return {'version':VERSION,'generated_utc':iso(now),
+                  'v48_inception_utc':iso(V48_INCEPTION),'research_only':True,
+                  'orders_enabled':False,'buy_alerts_enabled':False,
+                  'synthetic_snapshots_created':False,'repository_modified':False,
+                  'status':'DESCRIPTIVE_WINDOWS_READY' if all(result[s]['comparability']=='READY_DESCRIPTIVE_ONLY' for s in SYMBOLS) else 'INSUFFICIENT_PROSPECTIVE_WINDOWS',
+                  'assets':result,'rejected_invalid_snapshot_records_last_4d':malformed,
+                  'limitations':[
+                      'Unique market bars are observed BTC/ETH 5m spot-bar timestamps, not every market bar that actually closed.',
+                      'Recovered events count as one observed bar, and historical windows are frozen at their actual end.',
+                      'Event-level and unique-bar rates have different denominators; neither proves 15m schedule adherence.',
+                      'Gap estimates exclude leading and trailing unobserved periods (censored), and are descriptive.',
+                      'A V4.6 dispatch preceding a recovery does not prove V4.6 caused it; no causal attribution.',
+                      'No claim of profitable buy-timing advantage or executable fills; no backfilling of missing observations.',
+                  ]}
+          
+          
+          def main():
+              p=argparse.ArgumentParser()
+              p.add_argument('--root',type=Path,default=Path('.'))
+              p.add_argument('--output',type=Path,default=Path('/tmp/v49_quality.json'))
+              a=p.parse_args()
+              now=datetime.now(UTC)
+              report=evaluate(a.root,now)
+              a.output.parent.mkdir(parents=True,exist_ok=True)
+              a.output.write_text(json.dumps(report,ensure_ascii=False,indent=2,allow_nan=False)+'\n',encoding='utf8')
+              compact={s:{k:report['assets'][s]['last_24h'][k] for k in (
+                  'unique_snapshot_events','unique_spot_bars_first_seen','first_seen_valid_bars',
+                  'eventually_valid_spot_bars_by_window_end','recovered_invalid_to_valid_bars',
+                  'unresolved_bars','gaps_over_90min_between_first_usable_bars')}
+                  for s in SYMBOLS}
+              print('V4_9_UNIQUE_BAR_QUALITY '+json.dumps({'status':report['status'],'assets':compact}))
+              import os
+              summ=os.environ.get('GITHUB_STEP_SUMMARY')
+              if summ:
+                  with Path(summ).open('a',encoding='utf8') as f:
+                      f.write('## V4.9 BTC / ETH unique-bar quality (research-only)\n\n')
+                      f.write('| Symbol | Events | Unique spot bars | First valid | Eventually valid | Recovered bars | Gaps >90m | Compare |\n|---|---:|---:|---:|---:|---:|---:|---|\n')
+                      for s in SYMBOLS:
+                          x=report['assets'][s]['last_24h']
+                          f.write(f'| {s} | {x["unique_snapshot_events"]} | {x["unique_spot_bars_first_seen"]} | {x["first_seen_valid_bars"]} | {x["eventually_valid_spot_bars_by_window_end"]} | {x["recovered_invalid_to_valid_bars"]} | {x["gaps_over_90min_between_first_usable_bars"]} | {report["assets"][s]["comparability"]} |\n')
+                      f.write('\nRead-only. No synthetic data. No direct attribution of quality changes to auto rescue.\n')
+          
+          if __name__=='__main__':
+              main()
+          V49_PYTHON_CODE
+      - name: Validate no lookahead and distinct bar revision handling
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile /tmp/v49_quality.py
+          python - <<'PY'
+          import sys
+          from datetime import datetime,timedelta,timezone
+          sys.path.insert(0,'/tmp')
+          from v49_quality import window_metrics,iso,valid_at_first_seen
+          t=datetime(2026,10,28,12,tzinfo=timezone.utc)
+          bar=t-timedelta(minutes=10)
+          def x(sid,offset,valid):
+              at=t+timedelta(minutes=offset)
+              return {'snapshot_id':sid,'symbol':'BTC','first_seen_utc':iso(at),
+                  'spot_bar_end_utc':iso(bar),'futures_bar_end_utc':iso(bar-timedelta(minutes=5)),
+                  'state':'NO_DOWNTURN_SETUP' if valid else 'DATA_UNAVAILABLE',
+                  'missing':[] if valid else ['unsynchronized_spot_futures'],
+                  'spot_price_observation_usable':True}
+          rows=[x('failed',-4,False),x('later-valid',-1,True)]
+          a=window_metrics(rows,[],'BTC',t-timedelta(hours=1),t)
+          assert (a['unique_snapshot_events'],a['unique_spot_bars_first_seen'])==(2,1)
+          assert (a['first_seen_valid_bars'],a['eventually_valid_spot_bars_by_window_end'],a['recovered_invalid_to_valid_bars'])==(0,1,1)
+          early=window_metrics(rows,[],'BTC',t-timedelta(hours=1),t-timedelta(minutes=2))
+          assert early['eventually_valid_spot_bars_by_window_end']==0
+          assert not valid_at_first_seen(x('source-failed',0,False))
+          print('V4.9 source revision and frozen-window checks PASS')
+          PY
+      - name: Generate observation-only report
+        shell: bash
+        run: |
+          set -euo pipefail
+          python /tmp/v49_quality.py --root . --output /tmp/v49_quality_report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('/tmp/v49_quality_report.json').read_text(encoding='utf8'))
+          assert d['research_only'] and not d['orders_enabled'] and not d['buy_alerts_enabled']
+          assert not d['synthetic_snapshots_created'] and not d['repository_modified']
+          assert set(d['assets'])=={'BTC','ETH'}
+          for sym in ('BTC','ETH'):
+              a=d['assets'][sym]['last_24h']
+              assert a['unique_spot_bars_first_seen']<=a['unique_snapshot_events']
+              assert 0<=a['first_seen_valid_bars']<=a['eventually_valid_spot_bars_by_window_end']<=a['unique_spot_bars_first_seen']
+          print('V4.9 readonly quality integrity PASS')
+          PY
+      - name: Upload evidence only (never alter existing ledgers)
+        uses: actions/upload-artifact@v4
+        with:
+          name: v49-unique-bar-quality-${{ github.run_id }}
+          path: /tmp/v49_quality_report.json
+          retention-days: 30
+          if-no-files-found: error
