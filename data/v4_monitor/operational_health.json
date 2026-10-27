@@ -1,13 +1,13 @@
 {
   "version": "v4_2_operational_2026-10-26_01",
-  "audit_utc": "2026-10-27T13:36:56Z",
-  "status": "BLOCKED",
-  "audit_run_id": "40513548818-1",
+  "audit_utc": "2026-10-27T14:10:32Z",
+  "status": "DEGRADED_SCHEDULE",
+  "audit_run_id": "40518562787-1",
   "trigger": {
     "event_name": "workflow_run",
-    "upstream_workflow": "BTC ETH Market Flow 15min"
+    "upstream_workflow": "BTC ETH Coinalyze Derivatives"
   },
-  "v4_monitor_generated_utc": "2026-10-27T13:36:52Z",
+  "v4_monitor_generated_utc": "2026-10-27T14:10:26Z",
   "observer_version": "v4_prospective_paper_2026-10-26_01",
   "new_snapshots_saved": 2,
   "new_paper_entries": 0,
@@ -15,8 +15,8 @@
   "sources": {
     "spot": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-26T12:06:56Z",
-      "observed_window_end_utc": "2026-10-27T12:06:56Z",
+      "observed_window_start_utc": "2026-10-26T12:40:32Z",
+      "observed_window_end_utc": "2026-10-27T12:40:32Z",
       "expected_slots": 96,
       "observed_scheduled_starts": 31,
       "approximate_start_coverage_pct": 32.29,
@@ -29,13 +29,13 @@
     },
     "derivatives": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-26T12:06:56Z",
-      "observed_window_end_utc": "2026-10-27T12:06:56Z",
+      "observed_window_start_utc": "2026-10-26T12:40:32Z",
+      "observed_window_end_utc": "2026-10-27T12:40:32Z",
       "expected_slots": 96,
-      "observed_scheduled_starts": 34,
-      "approximate_start_coverage_pct": 35.42,
-      "scheduled_completed": 34,
-      "scheduled_success": 33,
+      "observed_scheduled_starts": 35,
+      "approximate_start_coverage_pct": 36.46,
+      "scheduled_completed": 35,
+      "scheduled_success": 34,
       "scheduled_failure": 1,
       "median_start_interval_min": 38.73,
       "largest_start_interval_min": 88.02,
@@ -44,30 +44,24 @@
   },
   "assets": {
     "BTC": {
-      "status": "BLOCKED_OR_STALE",
-      "model_state": "DATA_UNAVAILABLE",
-      "spot_bar_age_minutes": 1.94,
-      "futures_bar_age_minutes": 26.94,
-      "spot_collector_age_minutes": 1.22,
-      "derivatives_collector_age_minutes": 24.02,
-      "cross_source_end_skew_minutes": 25.0,
-      "failed_checks": [
-        "cross_source_bar_skew_ok",
-        "usable_model_decision"
-      ]
+      "status": "FRESH_AND_USABLE",
+      "model_state": "NO_DOWNTURN_SETUP",
+      "spot_bar_age_minutes": 10.54,
+      "futures_bar_age_minutes": 5.54,
+      "spot_collector_age_minutes": 6.5,
+      "derivatives_collector_age_minutes": 0.56,
+      "cross_source_end_skew_minutes": 5.0,
+      "failed_checks": []
     },
     "ETH": {
-      "status": "BLOCKED_OR_STALE",
-      "model_state": "DATA_UNAVAILABLE",
-      "spot_bar_age_minutes": 1.94,
-      "futures_bar_age_minutes": 26.94,
-      "spot_collector_age_minutes": 1.22,
-      "derivatives_collector_age_minutes": 24.02,
-      "cross_source_end_skew_minutes": 25.0,
-      "failed_checks": [
-        "cross_source_bar_skew_ok",
-        "usable_model_decision"
-      ]
+      "status": "FRESH_AND_USABLE",
+      "model_state": "NO_DOWNTURN_SETUP",
+      "spot_bar_age_minutes": 10.54,
+      "futures_bar_age_minutes": 5.54,
+      "spot_collector_age_minutes": 6.5,
+      "derivatives_collector_age_minutes": 0.56,
+      "cross_source_end_skew_minutes": 5.0,
+      "failed_checks": []
     }
   },
   "research_only": true,
