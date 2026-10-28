@@ -1,0 +1,349 @@
+name: BTC ETH V4.13 Decision Readiness Gate No Orders
+# Independent, read-only descriptive gate. NO executable buy signal or order.
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - BTC ETH V4.12 Forward Spot Price and Buy Timing No Orders
+    types: [completed]
+  schedule:
+    - cron: '12 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: btc-eth-v413-readonly-decision-readiness
+  cancel-in-progress: false
+
+jobs:
+  readiness:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout V4.12 prospective ledgers
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Materialize read-only gate and regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/decision_readiness.py <<'V413_ENGINE'
+          """V4.13 independent, read-only research readiness gate for BTC/ETH.
+
+          V4.12 is the source of truth; never generate observations, fills or orders.
+          """
+          import argparse
+          import hashlib
+          import json
+          import math
+          import random
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          UTC = timezone.utc
+          ASSETS = ('BTC', 'ETH')
+          HORIZONS = (4, 24)
+          GRADES = ('PRICE_ONLY_SHOCK', 'STRUCTURE_VERIFIED_SHOCK')
+          MAX_MARK_AGE_MIN = 35
+          MIN_PAIRED_EPISODES = 30
+          COST_PCT = '0.22'
+          VERSION = 'V4.13-RESEARCH-ONLY-2026-10-28'
+
+
+          def parse_time(value):
+              if not isinstance(value, str):
+                  raise ValueError('timestamp required')
+              v = datetime.fromisoformat(value.replace('Z', '+00:00'))
+              if v.utcoffset() is None:
+                  raise ValueError('timezone required')
+              return v.astimezone(UTC)
+
+
+          def utc_iso(value):
+              return value.astimezone(UTC).isoformat(timespec='seconds').replace('+00:00', 'Z')
+
+
+          def read_json(path):
+              try:
+                  return json.loads(path.read_text(encoding='utf-8'))
+              except FileNotFoundError:
+                  return None
+
+
+          def read_lines(directory):
+              out = []
+              if not directory.exists():
+                  return out
+              for file in sorted(directory.glob('*.jsonl')):
+                  for line in file.read_text(encoding='utf-8').splitlines():
+                      if line.strip():
+                          out.append(json.loads(line))
+              return out
+
+
+          def usable_mark(m, now, inception):
+              try:
+                  seen, bar = parse_time(m['first_seen_utc']), parse_time(m['bar_end_utc'])
+                  price = float(m['price'])
+                  share = float(m['spot_buy_share_1h'])
+                  cvd = float(m['spot_cvd_1h'])
+                  pct = float(m['change_4h_pct'])
+                  return (inception < seen <= now and bar <= seen and
+                          timedelta(0) <= now - seen <= timedelta(minutes=MAX_MARK_AGE_MIN) and
+                          timedelta(0) <= seen - bar <= timedelta(minutes=15) and
+                          math.isfinite(price) and price > 0 and
+                          all(map(math.isfinite, (share, cvd, pct))) and 0 <= share <= 100)
+              except (KeyError, TypeError, ValueError):
+                  return False
+
+
+          def latest_valid(marks, sym, now, inception):
+              candidates = (m for m in marks if m.get('symbol') == sym and usable_mark(m, now, inception))
+              return max(candidates, key=lambda m:parse_time(m['first_seen_utc']), default=None)
+
+
+          def active_cohort(cohorts, sym, now, inception):
+              valid = []
+              for c in cohorts:
+                  if c.get('symbol') != sym:
+                      continue
+                  try:
+                      seen = parse_time(c['start_seen_utc'])
+                      price = float(c['origin_price'])
+                      if (inception < seen <= now and now-seen <= timedelta(hours=4) and
+                              price > 0 and math.isfinite(price)):
+                          valid.append(c)
+                  except (KeyError, TypeError, ValueError):
+                      continue
+              return max(valid,key=lambda c:parse_time(c['start_seen_utc']),default=None)
+
+
+          def stage(mark, cohort):
+              if not mark:
+                  return 'DATA_STALE_OR_UNVERIFIED'
+              if not cohort:
+                  return 'SHOCK_RECORD_PENDING' if mark['change_4h_pct'] <= -1.0 else 'WAIT_NO_DIP'
+              origin=float(cohort['origin_price'])
+              if parse_time(mark['first_seen_utc']) <= parse_time(cohort['start_seen_utc']):
+                  return 'SHOCK_WAITING_NEXT_OBSERVATION'
+              if (mark['price'] > origin and mark['spot_cvd_1h'] > 0 and
+                      mark['spot_buy_share_1h'] >= 50):
+                  return 'RECOVERY_OBSERVED_RESEARCH_ONLY'
+              if mark['price'] < origin*0.99 and mark['spot_cvd_1h'] < 0 and mark['spot_buy_share_1h'] < 45:
+                  return 'SELLING_CONTINUES_PROXY'
+              return 'SHOCK_UNRESOLVED_WAIT'
+
+
+          def paired_episode(e, cohort, horizon):
+              if e.get('cohort_id') != cohort.get('cohort_id') or e.get('horizon_h') != horizon:
+                  return None
+              if e.get('status') != 'EVALUATED' or e.get('orders_enabled') is not False:
+                  return None
+              try:
+                  d=e['arms']['DIP_NEXT'];r=e['arms']['SPOT_RECOVERY']
+                  if d['status'] != 'PAPER_MARK_TO_MARK' or r['status'] != 'PAPER_MARK_TO_MARK':
+                      return None
+                  a=float(d['net_pct_by_cost'][COST_PCT]);b=float(r['net_pct_by_cost'][COST_PCT])
+                  if not math.isfinite(a) or not math.isfinite(b):return None
+                  return a,b
+              except (KeyError,ValueError,TypeError):
+                  return None
+
+
+          def bootstrap_lower(deltas):
+              """Reproducible descriptive percentile bootstrap lower interval endpoint."""
+              n=len(deltas)
+              if n < MIN_PAIRED_EPISODES:
+                  return None
+              seed=int(hashlib.sha256(','.join(f'{v:.8f}' for v in deltas).encode()).hexdigest()[:8],16)
+              rng=random.Random(seed)
+              samples=sorted(sum(deltas[rng.randrange(n)] for _ in range(n))/n for _ in range(2500))
+              return round(samples[62],5)  # approximately 2.5th percentile
+
+
+          def effectiveness(evaluations, cohorts, sym, horizon):
+              by_id={c['cohort_id']:c for c in cohorts if c.get('symbol')==sym and c.get('cohort_id')}
+              unique={}
+              for e in evaluations:
+                  c=by_id.get(e.get('cohort_id'))
+                  if not c or c.get('evidence_grade') not in GRADES:
+                      continue
+                  pair=paired_episode(e,c,horizon)
+                  if pair is not None and c['cohort_id'] not in unique:
+                      unique[c['cohort_id']] = (*pair,c['evidence_grade'])
+              pairs=list(unique.values());deltas=[r-d for d,r,_ in pairs]
+              mean=lambda a:round(sum(a)/len(a),5) if a else None
+              lower=bootstrap_lower(deltas)
+              avg_delta=mean(deltas);rec_avg=mean([r for _,r,_ in pairs])
+              # Requires meaningful independent outcomes, not just a positive descriptive mean.
+              if len(pairs)<MIN_PAIRED_EPISODES:
+                  gate='INSUFFICIENT_PAIRED_PROSPECTIVE_EPISODES'
+              elif lower is not None and lower>0 and rec_avg is not None and rec_avg>0:
+                  gate='STATISTICAL_CANDIDATE_REQUIRES_OUT_OF_SAMPLE_CONFIRMATION'
+              else:
+                  gate='NO_CONFIRMED_RECOVERY_ADVANTAGE'
+              return {'paired_independent_cohorts':len(pairs),'minimum_pairs':MIN_PAIRED_EPISODES,
+                      'mean_net_recovery_minus_immediate_pp':avg_delta,
+                      'bootstrap_95pct_lower_pp':lower,
+                      'mean_recovery_net_pct':rec_avg,
+                      'recovery_outperforms_fraction':round(sum(x>0 for x in deltas)/len(deltas),4) if deltas else None,
+                      'grade_counts':{grade:sum(g==grade for _,_,g in pairs) for grade in GRADES},
+                      'inference_gate':gate}
+
+
+          def evaluate(root, now):
+              base=Path(root)/'data/v4_monitor/buy_timing_v4_12'
+              protocol=read_json(base/'protocol.json')
+              if not protocol or protocol.get('no_backfill') is not True:
+                  raise ValueError('Missing or invalid V4.12 forward-only protocol')
+              inception=parse_time(protocol['inception_utc'])
+              if not inception<=now:
+                  raise ValueError('V4.12 inception lies in the future')
+              marks=read_lines(base/'marks');cohorts=read_lines(base/'cohorts');evals=read_lines(base/'evaluations')
+              assets={}
+              for sym in ASSETS:
+                  mark=latest_valid(marks,sym,now,inception)
+                  cohort=active_cohort(cohorts,sym,now,inception)
+                  state=stage(mark,cohort)
+                  assets[sym]={'current_research_state':state,
+                               'signal_first_seen_utc':cohort['start_seen_utc'] if cohort else None,
+                               'latest_mark_first_seen_utc':mark['first_seen_utc'] if mark else None,
+                               'latest_mark_price_usdt':mark['price'] if mark else None,
+                               'recent_4h_price_change_pct':mark['change_4h_pct'] if mark else None,
+                               'evidence_grade':cohort.get('evidence_grade') if cohort else None,
+                               'horizons':{str(h)+'h':effectiveness(evals,cohorts,sym,h) for h in HORIZONS}}
+              out={'version':VERSION,'generated_utc':utc_iso(now),'research_only':True,'orders_enabled':False,
+                   'buy_alerts_enabled':False,'verified_buy_signal':False,
+                   'assets':assets,'source_protocol_inception_utc':protocol['inception_utc'],
+                   'definition':'Market observations are descriptive; no strategy has verified buy timing advantage yet.',
+                   'limitations':['A positive spot-flow reversal is not an executable buy signal.',
+                                  'Snapshot mark prices are not executable fills; intrabar maximum adverse excursion is unknown.',
+                                  'Bootstrap intervals ignore regime changes and repeated hypothesis selection.',
+                                  'No backfilling of missing entries or post-event futures labels.',
+                                  'No automatic exchange orders, signals, or notifications.']}
+              return out
+
+
+          def main():
+              parser=argparse.ArgumentParser()
+              parser.add_argument('--root',type=Path,default=Path('.'))
+              parser.add_argument('--output',type=Path,default=Path('/tmp/v413_readiness.json'))
+              args=parser.parse_args();report=evaluate(args.root,datetime.now(UTC))
+              args.output.parent.mkdir(parents=True,exist_ok=True)
+              args.output.write_text(json.dumps(report,indent=2,ensure_ascii=False,allow_nan=False)+'\n',encoding='utf-8')
+              print('V4_13_DECISION_READINESS '+json.dumps({s:{'state':v['current_research_state'],
+                      'paired4h':v['horizons']['4h']['paired_independent_cohorts'],
+                      'paired24h':v['horizons']['24h']['paired_independent_cohorts']}
+                      for s,v in report['assets'].items()}))
+              import os
+              if os.getenv('GITHUB_STEP_SUMMARY'):
+                  with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:
+                      f.write('## V4.13 BTC / ETH research-only decision readiness\n\n')
+                      f.write('| Asset | Observed market state | 4h paired cohorts | 24h paired cohorts | Buy validated |\n|---|---|---:|---:|---|\n')
+                      for sym,v in report['assets'].items():
+                          f.write(f"| {sym} | {v['current_research_state']} | {v['horizons']['4h']['paired_independent_cohorts']} | {v['horizons']['24h']['paired_independent_cohorts']} | NO |\n")
+                      f.write('\nNo live orders or validated entry signals. Candidate evidence is descriptive only.\n')
+
+
+          if __name__=='__main__':main()
+          V413_ENGINE
+          cat > /tmp/test_decision_readiness.py <<'V413_TESTS'
+          import json
+          import tempfile
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          from decision_readiness import (parse_time,stage,usable_mark,effectiveness,evaluate,bootstrap_lower,
+              paired_episode, latest_valid)
+          BASE=datetime(2026,10,28,5,45,18,tzinfo=timezone.utc)
+          def iso(t):return t.isoformat().replace('+00:00','Z')
+          def mark(minutes,sym='BTC',price=100,cvd=-5,share=42,pct=-1.4):
+              t=BASE+timedelta(minutes=minutes)
+              return dict(symbol=sym,first_seen_utc=iso(t),bar_end_utc=iso(t-timedelta(minutes=5)),
+                          price=price,spot_cvd_1h=cvd,spot_buy_share_1h=share,change_4h_pct=pct,mark_id=sym+str(minutes))
+          def cohort(minutes,sym='BTC',id='case1',price=100):
+              return dict(symbol=sym,start_seen_utc=iso(BASE+timedelta(minutes=minutes)),
+                          cohort_id=id,origin_price=price,evidence_grade='PRICE_ONLY_SHOCK')
+          def pair(id,h=4,dip=-1,recovery=1):
+              return {'cohort_id':id,'horizon_h':h,'status':'EVALUATED','orders_enabled':False,
+                 'arms':{'DIP_NEXT':{'status':'PAPER_MARK_TO_MARK','net_pct_by_cost':{'0.22':dip}},
+                         'SPOT_RECOVERY':{'status':'PAPER_MARK_TO_MARK','net_pct_by_cost':{'0.22':recovery}}}}
+          def test():
+              now=BASE+timedelta(minutes=30)
+              m=mark(20)
+              assert usable_mark(m,now,BASE)
+              assert not usable_mark(mark(-10),now,BASE)
+              assert not usable_mark(mark(20),now+timedelta(minutes=65),BASE)
+              assert not usable_mark({**m,'bar_end_utc':iso(now+timedelta(minutes=5))},now,BASE)
+              assert not usable_mark({**m,'price':float('nan')},now,BASE)
+              try:parse_time('2026-10-28T08:00:00')
+              except ValueError:pass
+              else:raise AssertionError('Naive timestamp accepted')
+              assert stage(None,None)=='DATA_STALE_OR_UNVERIFIED'
+              assert stage(mark(20,pct=-0.1),None)=='WAIT_NO_DIP'
+              assert stage(m,None)=='SHOCK_RECORD_PENDING'
+              c=cohort(20)
+              assert stage(m,c)=='SHOCK_WAITING_NEXT_OBSERVATION'
+              assert stage(mark(21,price=101,cvd=2,share=55),c)=='RECOVERY_OBSERVED_RESEARCH_ONLY'
+              assert stage(mark(21,price=97,cvd=-3,share=40),c)=='SELLING_CONTINUES_PROXY'
+              assert stage(mark(21,price=99,cvd=1,share=45),c)=='SHOCK_UNRESOLVED_WAIT'
+              assert latest_valid([mark(10),mark(20)],'BTC',now,BASE)['mark_id']=='BTC20'
+              assert paired_episode(pair('a'),cohort(20,id='a'),4)==(-1,1)
+              assert paired_episode({**pair('a'),'orders_enabled':True},cohort(20,id='a'),4) is None
+              assert effectiveness([pair('a')],[cohort(20,id='a')],'BTC',4)['paired_independent_cohorts']==1
+              assert effectiveness([pair('a'),pair('a')],[cohort(20,id='a')],'BTC',4)['paired_independent_cohorts']==1
+              assert bootstrap_lower([2]*29) is None
+              assert bootstrap_lower([2]*30)==2
+              assert effectiveness([pair(str(i),dip=0.1,recovery=1.1) for i in range(30)],
+                                   [cohort(20,id=str(i)) for i in range(30)],'BTC',4)['inference_gate']=='STATISTICAL_CANDIDATE_REQUIRES_OUT_OF_SAMPLE_CONFIRMATION'
+              assert effectiveness([pair(str(i),dip=1.1,recovery=0.1) for i in range(30)],
+                                   [cohort(20,id=str(i)) for i in range(30)],'BTC',4)['inference_gate']=='NO_CONFIRMED_RECOVERY_ADVANTAGE'
+              with tempfile.TemporaryDirectory() as temp:
+                  base=Path(temp)/'data/v4_monitor/buy_timing_v4_12'
+                  base.mkdir(parents=True)
+                  (base/'protocol.json').write_text(json.dumps({'no_backfill':True,'inception_utc':iso(BASE)}),encoding='utf-8')
+                  report=evaluate(temp,now)
+                  assert all(v['current_research_state']=='DATA_STALE_OR_UNVERIFIED' for v in report['assets'].values())
+                  assert report['orders_enabled'] is False and report['verified_buy_signal'] is False
+                  (base/'marks').mkdir()
+                  (base/'marks/2026-10-28.jsonl').write_text(json.dumps(mark(20))+'\n')
+                  report=evaluate(temp,now)
+                  assert report['assets']['BTC']['current_research_state']=='SHOCK_RECORD_PENDING'
+                  assert report['assets']['ETH']['current_research_state']=='DATA_STALE_OR_UNVERIFIED'
+                  (base/'cohorts').mkdir()
+                  (base/'cohorts/2026-10-28.jsonl').write_text(json.dumps(cohort(20))+'\n')
+                  report=evaluate(temp,now)
+                  assert report['assets']['BTC']['current_research_state']=='SHOCK_WAITING_NEXT_OBSERVATION'
+              print('V4.13 tests passed (24 assertions, including future leakage, sparse inference, duplicates)')
+          if __name__=='__main__':test()
+          V413_TESTS
+          PYTHONPATH=/tmp python /tmp/test_decision_readiness.py
+      - name: Audit V4.12 data without any GitHub writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python /tmp/decision_readiness.py --root . --output /tmp/v413_readiness.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('/tmp/v413_readiness.json').read_text('utf8'))
+          assert data['research_only'] and data['orders_enabled'] is False
+          assert data['verified_buy_signal'] is False and data['buy_alerts_enabled'] is False
+          assert set(data['assets'])=={'BTC','ETH'}
+          print('V4.13 read-only research safety assertions PASS')
+          PY
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Upload V4.13 audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: v413-readiness-${{ github.run_id }}
+          path: /tmp/v413_readiness.json
+          retention-days: 30
+          if-no-files-found: error
