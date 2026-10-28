@@ -31,32 +31,84 @@ jobs:
         continue-on-error: true
         run: python market_flow_collector.py
 
-      - name: Save results with concurrent commit retry
+      - name: Save results with conflict-safe observation merge
+        if: steps.collect.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/market_flow_latest.json data/market_flow_history.json
-          if git diff --cached --quiet; then
-            echo "No new market flow data"
-            exit 0
-          fi
-          git commit -m "Update BTC ETH market flow"
+          # Preserve this run's observed data outside the worktree. Never recollect
+          # later prices and pretend they were available at this run's timestamp.
+          mkdir -p /tmp/market-flow-pending
+          cp data/market_flow_latest.json /tmp/market-flow-pending/latest.json
+          cp data/market_flow_history.json /tmp/market-flow-pending/history.json
           for attempt in 1 2 3 4 5 6; do
             git fetch origin main
-            if ! git rebase origin/main; then
-              git rebase --abort || true
-              echo "Rebase conflict: no forced overwrite" >&2
-              exit 1
-            fi
-            if git push origin HEAD:main; then
-              echo "Spot data saved on attempt $attempt"
+            git reset --hard origin/main
+            python - <<'PY'
+          import json
+          from datetime import datetime, timezone, timedelta
+          from pathlib import Path
+
+          root = Path('data')
+          pending = Path('/tmp/market-flow-pending')
+          def read(path):
+              return json.loads(path.read_text(encoding='utf-8'))
+          def observed_time(row):
+              if not isinstance(row, dict) or not isinstance(row.get('collected_utc'), str):
+                  raise ValueError('market-flow observation lacks collected_utc')
+              t = datetime.fromisoformat(row['collected_utc'].replace('Z','+00:00'))
+              if t.tzinfo is None:
+                  raise ValueError('market-flow observation must be UTC-aware')
+              return t.astimezone(timezone.utc)
+
+          fresh = read(pending / 'latest.json')
+          fresh_hist = read(pending / 'history.json')
+          if not isinstance(fresh.get('assets'),dict) or not isinstance(fresh_hist,list):
+              raise ValueError('invalid collector snapshot or history')
+          fresh_time = observed_time(fresh)
+          if fresh_time > datetime.now(timezone.utc) + timedelta(minutes=2):
+              raise ValueError('collector timestamp is unexpectedly in the future')
+          if not any(isinstance(x,dict) and x.get('collected_utc')==fresh['collected_utc'] for x in fresh_hist):
+              raise ValueError('collector history is missing this run snapshot')
+
+          latest_path = root / 'market_flow_latest.json'
+          hist_path = root / 'market_flow_history.json'
+          current = read(latest_path) if latest_path.exists() else None
+          previous_hist = read(hist_path) if hist_path.exists() else []
+          if not isinstance(previous_hist,list):
+              raise ValueError('remote market-flow history is not a list')
+          if current is None or observed_time(fresh) > observed_time(current):
+              latest_path.write_text(json.dumps(fresh,indent=2,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+          # Remote records win on duplicate timestamps: never rewrite history.
+          by_time = {}
+          for row in previous_hist:
+              by_time.setdefault(observed_time(row),row)
+          for row in fresh_hist:
+              by_time.setdefault(observed_time(row),row)
+          # Keep the existing collector's rolling 72-hour / 300-record policy.
+          newest = max(by_time) if by_time else fresh_time
+          cutoff = newest - timedelta(hours=72)
+          merged = [by_time[t] for t in sorted(by_time) if t >= cutoff][-300:]
+          if merged != previous_hist:
+              hist_path.write_text(json.dumps(merged,indent=2,ensure_ascii=False,allow_nan=False),encoding='utf-8')
+          print('Conflict-safe market-flow merge:',len(previous_hist),'remote rows ->',len(merged),'rows; latest retained by UTC')
+          PY
+            git add data/market_flow_latest.json data/market_flow_history.json
+            if git diff --cached --quiet; then
+              echo "No new observation after merging concurrent runs"
               exit 0
             fi
-            sleep "$((attempt*2))"
+            git commit -m "Update BTC ETH market flow (collision-safe)"
+            if git push origin HEAD:main; then
+              echo "Market flow saved safely on attempt $attempt"
+              exit 0
+            fi
+            echo "Concurrent update; retrying without overwriting newer market data ($attempt/6)" >&2
+            sleep "$((attempt * 2))"
           done
-          echo "Could not persist spot data after six attempts" >&2
+          echo "Market flow persistence failed after six merge attempts; no forced push" >&2
           exit 1
 
       - name: Check collection status
