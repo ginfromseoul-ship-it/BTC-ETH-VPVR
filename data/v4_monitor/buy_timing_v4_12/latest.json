@@ -1,6 +1,77 @@
 {
-  "status": "BOOTSTRAPPED_FORWARD_ONLY",
+  "version": "v4_12_forward_spot_20261028_01",
+  "asof_utc": "2026-10-28T05:55:30Z",
+  "status": "FORWARD_RESEARCH_ACTIVE",
   "research_only": true,
   "orders_enabled": false,
-  "new_marks": 0
+  "buy_alerts_enabled": false,
+  "new_marks": 2,
+  "new_cohorts": 0,
+  "new_evaluations": 0,
+  "by_symbol": {
+    "BTC": {
+      "cohorts": 0,
+      "matched_4h": 0,
+      "matched_24h": 0,
+      "unavailable": 0
+    },
+    "ETH": {
+      "cohorts": 0,
+      "matched_4h": 0,
+      "matched_24h": 0,
+      "unavailable": 0
+    }
+  },
+  "research_edge": {
+    "BTC": {
+      "evidence_grade_counts": {
+        "PRICE_ONLY_SHOCK": 0,
+        "STRUCTURE_VERIFIED_SHOCK": 0
+      },
+      "horizons": {
+        "4h": {
+          "paired_episodes": 0,
+          "mean_delta_vs_dip_pp": null,
+          "recovery_better_pct": null,
+          "skipped_recovery_count": 0,
+          "inference_status": "INSUFFICIENT_INDEPENDENT_EPISODES"
+        },
+        "24h": {
+          "paired_episodes": 0,
+          "mean_delta_vs_dip_pp": null,
+          "recovery_better_pct": null,
+          "skipped_recovery_count": 0,
+          "inference_status": "INSUFFICIENT_INDEPENDENT_EPISODES"
+        }
+      }
+    },
+    "ETH": {
+      "evidence_grade_counts": {
+        "PRICE_ONLY_SHOCK": 0,
+        "STRUCTURE_VERIFIED_SHOCK": 0
+      },
+      "horizons": {
+        "4h": {
+          "paired_episodes": 0,
+          "mean_delta_vs_dip_pp": null,
+          "recovery_better_pct": null,
+          "skipped_recovery_count": 0,
+          "inference_status": "INSUFFICIENT_INDEPENDENT_EPISODES"
+        },
+        "24h": {
+          "paired_episodes": 0,
+          "mean_delta_vs_dip_pp": null,
+          "recovery_better_pct": null,
+          "skipped_recovery_count": 0,
+          "inference_status": "INSUFFICIENT_INDEPENDENT_EPISODES"
+        }
+      }
+    }
+  },
+  "limitations": [
+    "Forward-only collector-observed close marks, not fills",
+    "Price-only shock does not imply futures validation",
+    "No funding, execution spreads, intrabar stops, or liquidation model",
+    "No predictive edge claimed until independent mature cohorts accumulate"
+  ]
 }
