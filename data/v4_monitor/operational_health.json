@@ -1,27 +1,27 @@
 {
   "version": "v4_2_operational_2026-10-26_01",
-  "audit_utc": "2026-10-28T11:26:23Z",
-  "status": "DEGRADED_SCHEDULE",
-  "audit_run_id": "40679929216-1",
+  "audit_utc": "2026-10-28T11:40:43Z",
+  "status": "BLOCKED",
+  "audit_run_id": "40681774861-1",
   "trigger": {
     "event_name": "workflow_run",
-    "upstream_workflow": "BTC ETH Coinalyze Derivatives"
+    "upstream_workflow": "BTC ETH Market Flow 15min"
   },
-  "v4_monitor_generated_utc": "2026-10-28T11:26:18Z",
+  "v4_monitor_generated_utc": "2026-10-28T11:40:34Z",
   "observer_version": "v4_prospective_paper_2026-10-26_01",
-  "new_snapshots_saved": 0,
+  "new_snapshots_saved": 2,
   "new_paper_entries": 0,
   "new_forward_outcomes": 0,
   "sources": {
     "spot": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-27T09:56:23Z",
-      "observed_window_end_utc": "2026-10-28T09:56:23Z",
+      "observed_window_start_utc": "2026-10-27T10:10:43Z",
+      "observed_window_end_utc": "2026-10-28T10:10:43Z",
       "expected_slots": 96,
-      "observed_scheduled_starts": 31,
-      "approximate_start_coverage_pct": 32.29,
-      "scheduled_completed": 31,
-      "scheduled_success": 31,
+      "observed_scheduled_starts": 32,
+      "approximate_start_coverage_pct": 33.33,
+      "scheduled_completed": 32,
+      "scheduled_success": 32,
       "scheduled_failure": 0,
       "median_start_interval_min": 46.03,
       "largest_start_interval_min": 68.53,
@@ -29,39 +29,45 @@
     },
     "derivatives": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-27T09:56:23Z",
-      "observed_window_end_utc": "2026-10-28T09:56:23Z",
+      "observed_window_start_utc": "2026-10-27T10:10:43Z",
+      "observed_window_end_utc": "2026-10-28T10:10:43Z",
       "expected_slots": 96,
-      "observed_scheduled_starts": 34,
-      "approximate_start_coverage_pct": 35.42,
-      "scheduled_completed": 34,
-      "scheduled_success": 34,
+      "observed_scheduled_starts": 35,
+      "approximate_start_coverage_pct": 36.46,
+      "scheduled_completed": 35,
+      "scheduled_success": 35,
       "scheduled_failure": 0,
-      "median_start_interval_min": 40.1,
+      "median_start_interval_min": 40.68,
       "largest_start_interval_min": 68.67,
       "method": "Actual event=schedule runs created in a 24h window ending 90m ago; approximate count; no exact cron slot matching; historical schedule assumed unchanged."
     }
   },
   "assets": {
     "BTC": {
-      "status": "FRESH_AND_USABLE",
-      "model_state": "NO_DOWNTURN_SETUP",
-      "spot_bar_age_minutes": 1.4,
-      "futures_bar_age_minutes": 6.4,
-      "spot_collector_age_minutes": 0.81,
-      "derivatives_collector_age_minutes": 0.51,
-      "cross_source_end_skew_minutes": 5.0,
-      "failed_checks": []
+      "status": "BLOCKED_OR_STALE",
+      "model_state": "DATA_UNAVAILABLE",
+      "spot_bar_age_minutes": 0.72,
+      "futures_bar_age_minutes": 20.72,
+      "spot_collector_age_minutes": 0.51,
+      "derivatives_collector_age_minutes": 14.83,
+      "cross_source_end_skew_minutes": 20.0,
+      "failed_checks": [
+        "cross_source_bar_skew_ok",
+        "usable_model_decision"
+      ]
     },
     "ETH": {
-      "status": "FRESH_AND_USABLE",
-      "model_state": "NO_DOWNTURN_SETUP",
-      "spot_bar_age_minutes": 1.4,
-      "futures_bar_age_minutes": 6.4,
-      "spot_collector_age_minutes": 0.81,
-      "derivatives_collector_age_minutes": 0.51,
-      "cross_source_end_skew_minutes": 5.0,
-      "failed_checks": []
+      "status": "BLOCKED_OR_STALE",
+      "model_state": "DATA_UNAVAILABLE",
+      "spot_bar_age_minutes": 0.72,
+      "futures_bar_age_minutes": 20.72,
+      "spot_collector_age_minutes": 0.51,
+      "derivatives_collector_age_minutes": 14.83,
+      "cross_source_end_skew_minutes": 20.0,
+      "failed_checks": [
+        "cross_source_bar_skew_ok",
+        "usable_model_decision"
+      ]
     }
   },
   "research_only": true,
