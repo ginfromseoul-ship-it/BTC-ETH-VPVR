@@ -1,0 +1,80 @@
+name: V4.13 Verified File Export (No Git Writes)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: btc-eth-v413-one-time-patch
+  cancel-in-progress: false
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply isolated V4.13 edits and verify tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/v4_13_decision_readiness.yml')
+          s=p.read_text(encoding='utf-8')
+          def change(old,new):
+              global s
+              assert s.count(old)==1, f'Cannot patch safely: expected one match, got {s.count(old)} for {old[:65]!r}'
+              s=s.replace(old,new,1)
+          change("if d['status'] != 'PAPER_MARK_TO_MARK' or r['status'] != 'PAPER_MARK_TO_MARK':",
+                 "if d['status'] != 'PAPER_MARK_TO_MARK' or r['status'] not in ('PAPER_MARK_TO_MARK','CASH_NO_SIGNAL','CASH_LATE_ENTRY'):")
+          change("if not math.isfinite(a) or not math.isfinite(b):return None\n                  return a,b",
+                 "if not math.isfinite(a) or not math.isfinite(b):return None\n                  if r['status'].startswith('CASH') and b != 0:return None\n                  return a,b")
+          change("pairs=list(unique.values());deltas=[r-d for d,r,_ in pairs]",
+                 "pairs=list(unique.values());deltas=[r-d for d,r,_ in pairs]\n              verified_pairs=[(d,r) for d,r,g in pairs if g=='STRUCTURE_VERIFIED_SHOCK']\n              verified_deltas=[r-d for d,r in verified_pairs]")
+          change("lower=bootstrap_lower(deltas)\n              avg_delta=mean(deltas);rec_avg=mean([r for _,r,_ in pairs])",
+                 "lower=bootstrap_lower(deltas)\n              verified_lower=bootstrap_lower(verified_deltas)\n              avg_delta=mean(deltas);rec_avg=mean([r for _,r,_ in pairs])")
+          change("if len(pairs)<MIN_PAIRED_EPISODES:\n                  gate='INSUFFICIENT_PAIRED_PROSPECTIVE_EPISODES'\n              elif lower is not None and lower>0 and rec_avg is not None and rec_avg>0:\n                  gate='STATISTICAL_CANDIDATE_REQUIRES_OUT_OF_SAMPLE_CONFIRMATION'",
+                 "if len(pairs)<MIN_PAIRED_EPISODES:\n                  gate='INSUFFICIENT_PAIRED_PROSPECTIVE_EPISODES'\n              elif len(verified_pairs)<MIN_PAIRED_EPISODES:\n                  gate='INSUFFICIENT_STRUCTURE_DATA_PAIRED_EPISODES'\n              elif verified_lower is not None and verified_lower>0 and mean([r for _,r in verified_pairs])>0:\n                  gate='STATISTICAL_CANDIDATE_REQUIRES_OUT_OF_SAMPLE_CONFIRMATION'")
+          change("'bootstrap_95pct_lower_pp':lower,\n                      'mean_recovery_net_pct':rec_avg,",
+                 "'bootstrap_95pct_lower_pp':lower,\n                      'structure_data_paired_cohorts':len(verified_pairs),\n                      'structure_data_bootstrap_95pct_lower_pp':verified_lower,\n                      'mean_recovery_net_pct':rec_avg,")
+          change("def cohort(minutes,sym='BTC',id='case1',price=100):\n              return dict(symbol=sym,start_seen_utc=iso(BASE+timedelta(minutes=minutes)),\n                          cohort_id=id,origin_price=price,evidence_grade='PRICE_ONLY_SHOCK')",
+                 "def cohort(minutes,sym='BTC',id='case1',price=100,grade='PRICE_ONLY_SHOCK'):\n              return dict(symbol=sym,start_seen_utc=iso(BASE+timedelta(minutes=minutes)),\n                          cohort_id=id,origin_price=price,evidence_grade=grade)")
+          change("assert paired_episode(pair('a'),cohort(20,id='a'),4)==(-1,1)",
+                 "assert paired_episode(pair('a'),cohort(20,id='a'),4)==(-1,1)\n              cash=pair('a');cash['arms']['SPOT_RECOVERY']={'status':'CASH_NO_SIGNAL','net_pct_by_cost':{'0.22':0}}\n              assert paired_episode(cash,cohort(20,id='a'),4)==(-1,0)\n              bad_cash=pair('a');bad_cash['arms']['SPOT_RECOVERY']={'status':'CASH_NO_SIGNAL','net_pct_by_cost':{'0.22':1}}\n              assert paired_episode(bad_cash,cohort(20,id='a'),4) is None")
+          change("[cohort(20,id=str(i)) for i in range(30)],'BTC',4)['inference_gate']=='STATISTICAL_CANDIDATE_REQUIRES_OUT_OF_SAMPLE_CONFIRMATION'",
+                 "[cohort(20,id=str(i),grade='STRUCTURE_VERIFIED_SHOCK') for i in range(30)],'BTC',4)['inference_gate']=='STATISTICAL_CANDIDATE_REQUIRES_OUT_OF_SAMPLE_CONFIRMATION'")
+          change("assert effectiveness([pair(str(i),dip=1.1,recovery=0.1) for i in range(30)],\n                                   [cohort(20,id=str(i)) for i in range(30)],'BTC',4)['inference_gate']=='NO_CONFIRMED_RECOVERY_ADVANTAGE'",
+                 "assert effectiveness([pair(str(i),dip=1.1,recovery=0.1) for i in range(30)],\n                                   [cohort(20,id=str(i),grade='STRUCTURE_VERIFIED_SHOCK') for i in range(30)],'BTC',4)['inference_gate']=='NO_CONFIRMED_RECOVERY_ADVANTAGE'\n              assert effectiveness([pair(str(i),dip=0.1,recovery=1.1) for i in range(30)],\n                                   [cohort(20,id=str(i)) for i in range(30)],'BTC',4)['inference_gate']=='INSUFFICIENT_STRUCTURE_DATA_PAIRED_EPISODES'\n              cash_cases=[]\n              for i in range(30):\n                  cp=pair(str(i),dip=0.5,recovery=0)\n                  cp['arms']['SPOT_RECOVERY']['status']='CASH_NO_SIGNAL'\n                  cash_cases.append(cp)\n              cash_result=effectiveness(cash_cases,[cohort(20,id=str(i),grade='STRUCTURE_VERIFIED_SHOCK') for i in range(30)],'BTC',4)\n              assert cash_result['paired_independent_cohorts']==30\n              assert cash_result['inference_gate']=='NO_CONFIRMED_RECOVERY_ADVANTAGE'")
+          change('V4.13 tests passed (24 assertions, including future leakage, sparse inference, duplicates)',
+                 'V4.13 tests passed (including future leakage, cash non-entry, structure-data gating, sparse inference, duplicates)')
+          p.write_text(s,encoding='utf-8')
+          # Extract and run the embedded engine and test script from YAML, exactly as CI will do.
+          from textwrap import dedent
+          engine=s.split("cat > /tmp/decision_readiness.py <<'V413_ENGINE'",1)[1].split('\n          V413_ENGINE',1)[0]
+          tests=s.split("cat > /tmp/test_decision_readiness.py <<'V413_TESTS'",1)[1].split('\n          V413_TESTS',1)[0]
+          Path('/tmp/decision_readiness.py').write_text(dedent(engine.lstrip('\n')),encoding='utf-8')
+          Path('/tmp/test_decision_readiness.py').write_text(dedent(tests.lstrip('\n')),encoding='utf-8')
+          PY
+          PYTHONPATH=/tmp python /tmp/test_decision_readiness.py
+          python /tmp/decision_readiness.py --root . --output /tmp/v413_patch_check.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          j=json.loads(Path('/tmp/v413_patch_check.json').read_text())
+          assert j['orders_enabled'] is False and j['verified_buy_signal'] is False
+          assert set(j['assets'])=={'BTC','ETH'}
+          print('V4.13 patched gate local verification PASS')
+          PY
+          git diff -- .github/workflows/v4_13_decision_readiness.yml
+      - name: Export verified V4.13 file as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: v413-verified-replacement
+          path: .github/workflows/v4_13_decision_readiness.yml
+          retention-days: 7
+          if-no-files-found: error
