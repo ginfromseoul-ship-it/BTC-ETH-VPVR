@@ -1,0 +1,408 @@
+name: BTC ETH V4.12 Forward Spot Price and Buy Timing No Orders
+# Independent prospective research. Does not alter V4.3/V4.5 or trading permissions.
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - BTC ETH Market Flow 15min
+    types: [completed]
+  schedule:
+    - cron: '8,23,38,53 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-eth-v412-forward-research
+  cancel-in-progress: false
+
+jobs:
+  forward_research:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout latest main source and immutable ledger
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Install Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Materialize V4.12 standalone engine and complete tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/v4_12_forward_spot.py <<'V412_ENGINE'
+          """V4.12 forward-only BTC/ETH spot marks and paper buy edge. No orders."""
+          import hashlib, json, math
+          from pathlib import Path
+          from datetime import datetime, timedelta, timezone
+          
+          UTC=timezone.utc
+          VERSION='v4_12_forward_spot_20261028_01'
+          SYMS={'BTC':'BTCUSDT','ETH':'ETHUSDT'}
+          COSTS=(0.14,0.22,0.35)
+          
+          
+          def dt(s):
+              t=datetime.fromisoformat(s.replace('Z','+00:00'))
+              if t.tzinfo is None:raise ValueError('naive time')
+              return t.astimezone(UTC)
+          
+          
+          def ts(t):return t.astimezone(UTC).isoformat(timespec='seconds').replace('+00:00','Z')
+          
+          
+          def read(p,default=None):
+              try:return json.loads(p.read_text('utf8'))
+              except FileNotFoundError:return default
+          
+          
+          def ledger(base,kind,now,days=5):
+              result=[]
+              for offset in range(days+1):
+                  p=base/kind/((now.date()-timedelta(days=offset)).isoformat()+'.jsonl')
+                  if p.exists():result.extend(json.loads(s) for s in p.read_text('utf8').splitlines() if s.strip())
+              return result
+          
+          
+          def append(base,kind,row,key,time):
+              p=base/kind/(time.date().isoformat()+'.jsonl');p.parent.mkdir(parents=True,exist_ok=True)
+              if p.exists() and any(json.loads(s).get(key)==row[key] for s in p.read_text('utf8').splitlines() if s.strip()):return False
+              with p.open('a',encoding='utf8') as f:f.write(json.dumps(row,sort_keys=True,allow_nan=False)+'\n')
+              return True
+          
+          
+          def mark_from_spot(source,sym,now):
+              """Only last completed 5m bar; first_seen is collector time (not candle end)."""
+              try:
+                  seen=dt(source['collected_utc']);x=source['assets'][SYMS[sym]]
+                  if x['quality']['spot_flow']!='ok':return None
+                  flow=x['spot']['flow'];end=dt(flow['last_closed_bar_utc'])
+                  px=float(flow['latest_close_usdt']);change=float(flow['windows']['4h']['price_change_pct'])
+                  share=float(flow['windows']['1h']['buy_share_quote_pct'])
+                  cvd=float(flow['windows']['1h']['cvd_delta_quote_usdt'])
+                  if (not all(map(math.isfinite,(px,change,share,cvd))) or px<=0
+                      or flow['windows']['4h'].get('status')!='ok'
+                      or not timedelta(0)<=now-seen<=timedelta(minutes=25)
+                      or not timedelta(0)<=seen-end<=timedelta(minutes=12)):return None
+                  return dict(symbol=sym,first_seen_utc=ts(seen),bar_end_utc=ts(end),price=px,
+                              change_4h_pct=change,spot_buy_share_1h=share,spot_cvd_1h=cvd,
+                              mark_id=hashlib.sha256((VERSION+'|'+sym+'|'+ts(end)).encode()).hexdigest()[:24])
+              except (KeyError,TypeError,ValueError,OverflowError):return None
+          
+          
+          def grade(future,sym,mark):
+              if not future:return 'PRICE_ONLY_SHOCK'
+              try:
+                  t=dt(mark['first_seen_utc']);f=dt(future['generated_utc']);asset=future['assets'][sym]
+                  end=dt(asset['futures_flow']['last_complete_utc'])
+                  oi_end=dt(asset['open_interest']['history_asof_utc'])
+                  liq=asset['liquidations']['windows']['1h']
+                  liq_end=dt(liq['end_utc'])
+                  if (timedelta(0)<=t-f<=timedelta(minutes=20)
+                      and timedelta(0)<=t-oi_end<=timedelta(minutes=25)
+                      and liq.get('status')=='ok'
+                      and timedelta(0)<=t-liq_end<=timedelta(minutes=90)
+                      and timedelta(0)<=t-end<=timedelta(minutes=20)
+                      and abs(end-dt(mark['bar_end_utc']))<=timedelta(minutes=15)
+                      and all(asset['quality'].get(k)=='ok' for k in ('open_interest','liquidations','futures_flow'))):
+                      return 'STRUCTURE_VERIFIED_SHOCK'
+              except (KeyError,TypeError,ValueError):pass
+              return 'PRICE_ONLY_SHOCK'
+          
+          
+          def first_after(marks,sym,start,end,predicate=lambda m:True):
+              return next((m for m in marks if m['symbol']==sym and
+                           start<dt(m['first_seen_utc'])<=end and
+                           dt(m['bar_end_utc'])>start and predicate(m)),None)
+          
+          
+          def ending(marks,sym,target):
+              return next((m for m in marks if m['symbol']==sym and
+                           target<=dt(m['bar_end_utc']) and
+                           target<=dt(m['first_seen_utc'])<=target+timedelta(minutes=45)),None)
+          
+          
+          def good_coverage(marks,start):
+              times=[dt(m['first_seen_utc']) for m in marks if start<dt(m['first_seen_utc'])<=start+timedelta(hours=4)]
+              return (len(times)>=3 and times[0]-start<=timedelta(minutes=45) and
+                      start+timedelta(hours=4)-times[-1]<=timedelta(minutes=45) and
+                      all(b-a<=timedelta(minutes=45) for a,b in zip(times,times[1:])))
+          
+          def evaluate(root,now):
+              root=Path(root);base=root/'data/v4_monitor/buy_timing_v4_12';base.mkdir(parents=True,exist_ok=True)
+              protocol=base/'protocol.json';cfg=read(protocol)
+              if cfg is None:
+                  cfg=dict(version=VERSION,inception_utc=ts(now),no_backfill=True,shock_threshold=-1.0,
+                           entry_deadline_minutes=45,recovery_deadline_hours=4,horizons_hours=[4,24],
+                           cost_scenarios_pct=COSTS)
+                  protocol.write_text(json.dumps(cfg,indent=2)+'\n','utf8')
+                  outcome=dict(status='BOOTSTRAPPED_FORWARD_ONLY',research_only=True,orders_enabled=False,new_marks=0)
+                  (base/'latest.json').write_text(json.dumps(outcome,indent=2)+'\n','utf8')
+                  return outcome
+              if cfg['version']!=VERSION or cfg['no_backfill'] is not True:raise ValueError('Protocol mismatch')
+              inception=dt(cfg['inception_utc']);source=read(root/'data/market_flow_latest.json')
+              future=read(root/'data/coinalyze_derivatives_latest.json');marks=ledger(base,'marks',now)
+              added=0;fresh=[]
+              for sym in SYMS:
+                  m=mark_from_spot(source,sym,now) if source else None
+                  if m and dt(m['first_seen_utc'])>inception and append(base,'marks',m,'mark_id',dt(m['first_seen_utc'])):
+                      marks.append(m);fresh.append(m);added+=1
+              marks=sorted(marks,key=lambda m:(m['first_seen_utc'],m['symbol'],m['mark_id']))
+              cohorts=ledger(base,'cohorts',now);new_cohorts=0
+              for m in fresh:
+                  sym=m['symbol'];seen=dt(m['first_seen_utc'])
+                  if m['change_4h_pct']>-1.0:continue
+                  if any(c['symbol']==sym and timedelta(0)<=seen-dt(c['start_seen_utc'])<timedelta(hours=24) for c in cohorts):continue
+                  c=dict(cohort_id=hashlib.sha256((VERSION+'|'+m['mark_id']).encode()).hexdigest()[:24],
+                         symbol=sym,start_seen_utc=m['first_seen_utc'],origin_mark_id=m['mark_id'],
+                         origin_price=m['price'],shock_pct_4h=m['change_4h_pct'],evidence_grade=grade(future,sym,m))
+                  if append(base,'cohorts',c,'cohort_id',seen):cohorts.append(c);new_cohorts+=1
+              results=ledger(base,'evaluations',now);known={r['evaluation_id'] for r in results};new_results=0
+              for c in cohorts:
+                  sym=c['symbol'];start=dt(c['start_seen_utc']);data=[m for m in marks if m['symbol']==sym]
+                  immediate=first_after(data,sym,start,start+timedelta(minutes=45))
+                  recovery=first_after(data,sym,start,start+timedelta(hours=4),
+                      lambda m: m['price']>c['origin_price'] and m['spot_buy_share_1h']>=50 and m['spot_cvd_1h']>0)
+                  coverage=good_coverage(data,start)
+                  for hours in (4,24):
+                      eid=c['cohort_id']+'|'+str(hours)
+                      if eid in known:continue
+                      target=start+timedelta(hours=hours)
+                      if now<=target+timedelta(minutes=45):continue
+                      terminal=ending(data,sym,target)
+                      if not immediate or not terminal:
+                          status='UNAVAILABLE_ENTRY' if not immediate else 'UNAVAILABLE_EXIT';arms={}
+                      else:
+                          status='EVALUATED';arms={}
+                          for name,entry in (('DIP_NEXT',immediate),('SPOT_RECOVERY',recovery)):
+                              if entry is None:
+                                  if name=='SPOT_RECOVERY' and coverage:
+                                      arms[name]={'status':'CASH_NO_SIGNAL','net_pct_by_cost':{str(v):0 for v in COSTS}}
+                                  else:
+                                      arms[name]={'status':'UNVERIFIED_SIGNAL_COVERAGE','net_pct_by_cost':None}
+                                      status='UNAVAILABLE_SIGNAL_COVERAGE'
+                              elif dt(entry['first_seen_utc'])>=target:
+                                  arms[name]={'status':'CASH_LATE_ENTRY','net_pct_by_cost':{str(v):0 for v in COSTS}}
+                              else:
+                                  gross=100*(terminal['price']/entry['price']-1)
+                                  arms[name]={'status':'PAPER_MARK_TO_MARK','entry_mark_id':entry['mark_id'],
+                                              'entry_seen_utc':entry['first_seen_utc'],
+                                              'net_pct_by_cost':{str(v):round(gross-v,5) for v in COSTS}}
+                      rec=dict(evaluation_id=eid,cohort_id=c['cohort_id'],symbol=sym,horizon_h=hours,
+                               due_utc=ts(target),completed_utc=ts(now),status=status,evidence_grade=c['evidence_grade'],
+                               terminal_mark_id=terminal['mark_id'] if terminal else None,
+                               arms=arms,reference_only=True,orders_enabled=False)
+                      if append(base,'evaluations',rec,'evaluation_id',now):results.append(rec);known.add(eid);new_results+=1
+              by={sym:dict(cohorts=sum(c['symbol']==sym for c in cohorts),
+                           matched_4h=sum(r['symbol']==sym and r['horizon_h']==4 and r['status']=='EVALUATED' for r in results),
+                           matched_24h=sum(r['symbol']==sym and r['horizon_h']==24 and r['status']=='EVALUATED' for r in results),
+                           unavailable=sum(r['symbol']==sym and r['status'].startswith('UNAVAILABLE') for r in results)) for sym in SYMS}
+              # Descriptive, same-event, common-horizon net return deltas.
+              # Never discard a recovery non-entry if it was verifiably observed as cash.
+              edge={}
+              for sym in SYMS:
+                  grades={k:sum(c['symbol']==sym and c['evidence_grade']==k for c in cohorts)
+                          for k in ('PRICE_ONLY_SHOCK','STRUCTURE_VERIFIED_SHOCK')}
+                  by_h={}
+                  for h in (4,24):
+                      matched=[r for r in results if r['symbol']==sym and r['horizon_h']==h and r['status']=='EVALUATED'
+                               and r['arms']['DIP_NEXT']['net_pct_by_cost'] is not None
+                               and r['arms']['SPOT_RECOVERY']['net_pct_by_cost'] is not None]
+                      deltas=[r['arms']['SPOT_RECOVERY']['net_pct_by_cost']['0.14']-
+                              r['arms']['DIP_NEXT']['net_pct_by_cost']['0.14'] for r in matched]
+                      by_h[str(h)+'h']={'paired_episodes':len(matched),
+                           'mean_delta_vs_dip_pp':round(sum(deltas)/len(deltas),5) if deltas else None,
+                           'recovery_better_pct':round(100*sum(v>0 for v in deltas)/len(deltas),2) if deltas else None,
+                           'skipped_recovery_count':sum(r['arms']['SPOT_RECOVERY']['status'].startswith('CASH') for r in matched),
+                           'inference_status':'DESCRIPTIVE_ONLY' if len(matched)>=30 else 'INSUFFICIENT_INDEPENDENT_EPISODES'}
+                  edge[sym]={'evidence_grade_counts':grades,'horizons':by_h}
+              out=dict(version=VERSION,asof_utc=ts(now),status='FORWARD_RESEARCH_ACTIVE',
+                       research_only=True,orders_enabled=False,buy_alerts_enabled=False,new_marks=added,
+                       new_cohorts=new_cohorts,new_evaluations=new_results,by_symbol=by,research_edge=edge,
+                       limitations=['Forward-only collector-observed close marks, not fills',
+                          'Price-only shock does not imply futures validation',
+                          'No funding, execution spreads, intrabar stops, or liquidation model',
+                          'No predictive edge claimed until independent mature cohorts accumulate'])
+              (base/'latest.json').write_text(json.dumps(out,indent=2)+'\n','utf8');return out
+          
+          
+          if __name__=='__main__':
+              import argparse
+              p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path('.'));p.add_argument('--test',action='store_true');a=p.parse_args()
+              if a.test:
+                  from test_v4_12_forward_spot import tests
+                  tests()
+              else:
+                  result=evaluate(a.root,datetime.now(UTC))
+                  assert result.get('orders_enabled') is False and result.get('research_only') is True
+                  print('V4_12_FORWARD '+json.dumps({k:result.get(k) for k in ('status','new_marks','new_cohorts','new_evaluations','by_symbol')}))
+          V412_ENGINE
+          cat > /tmp/test_v4_12_forward_spot.py <<'V412_TESTS'
+          """Tests run in GitHub before every prospective paper read/write."""
+          import json, tempfile
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          from v4_12_forward_spot import (VERSION,dt,ts,mark_from_spot,grade,evaluate,first_after,ending,good_coverage,mark_from_spot,ledger)
+          
+          BASE=datetime(2026,10,28,3,0,tzinfo=timezone.utc)
+          
+          def source(t,btc=-1.1,eth=-1.2):
+              def asset(px,change):
+                  end=t-timedelta(minutes=5)
+                  return {'quality':{'spot_flow':'ok'},'spot':{'flow':{
+                      'last_closed_bar_utc':ts(end),'latest_close_usdt':px,
+                      'windows':{'1h':{'buy_share_quote_pct':51.0,'cvd_delta_quote_usdt':100},
+                                 '4h':{'status':'ok','price_change_pct':change}}}}}
+              return {'collected_utc':ts(t),'assets':{'BTCUSDT':asset(80000,btc),'ETHUSDT':asset(2400,eth)}}
+          
+          def futures(t):
+              def asset():return {'quality':{'open_interest':'ok','liquidations':'ok','futures_flow':'ok'},
+                 'futures_flow':{'last_complete_utc':ts(t-timedelta(minutes=5))},
+                 'open_interest':{'history_asof_utc':ts(t-timedelta(minutes=5))},
+                 'liquidations':{'windows':{'1h':{'status':'ok','end_utc':ts(t-timedelta(minutes=45))}}}}
+              return {'generated_utc':ts(t-timedelta(minutes=1)),'assets':{'BTC':asset(),'ETH':asset()}}
+          
+          def write_source(root,spot,fut=None):
+              d=root/'data';d.mkdir(exist_ok=True)
+              (d/'market_flow_latest.json').write_text(json.dumps(spot))
+              if fut:(d/'coinalyze_derivatives_latest.json').write_text(json.dumps(fut))
+          
+          def tests():
+              assert dt(ts(BASE))==BASE
+              try:dt('2026-10-28T03:00:00')
+              except ValueError:pass
+              else:raise AssertionError('timezone missing accepted')
+              m=mark_from_spot(source(BASE),'BTC',BASE+timedelta(minutes=1));assert m['price']==80000
+              assert m['first_seen_utc']==ts(BASE) and m['bar_end_utc']==ts(BASE-timedelta(minutes=5))
+              assert mark_from_spot(source(BASE),'BTC',BASE+timedelta(minutes=26)) is None
+              bad=source(BASE);bad['assets']['BTCUSDT']['quality']['spot_flow']='unavailable'
+              assert mark_from_spot(bad,'BTC',BASE) is None
+              assert grade(futures(BASE),'BTC',m)=='STRUCTURE_VERIFIED_SHOCK'
+              assert grade(futures(BASE+timedelta(minutes=2)),'BTC',m)=='PRICE_ONLY_SHOCK'
+              assert grade(futures(BASE-timedelta(minutes=30)),'BTC',m)=='PRICE_ONLY_SHOCK'
+              after=mark_from_spot(source(BASE+timedelta(minutes=15)),'BTC',BASE+timedelta(minutes=15))
+              assert first_after([m,after],'BTC',BASE,BASE+timedelta(minutes=45))==after
+              assert first_after([m],'BTC',BASE,BASE+timedelta(minutes=45)) is None
+              assert ending([m,after],'BTC',BASE+timedelta(minutes=10))==after
+              assert not good_coverage([after],BASE)
+              with tempfile.TemporaryDirectory() as folder:
+                  root=Path(folder)
+                  write_source(root,source(BASE),futures(BASE))
+                  r=evaluate(root,BASE+timedelta(minutes=1));assert r['status']=='BOOTSTRAPPED_FORWARD_ONLY'
+                  protocol=root/'data/v4_monitor/buy_timing_v4_12/protocol.json'
+                  assert json.loads(protocol.read_text())['no_backfill'] is True
+                  # old source already seen at bootstrap cannot create a hindsight cohort
+                  r=evaluate(root,BASE+timedelta(minutes=2));assert r['new_cohorts']==0
+                  # newly observed at t=15m, with contemporaneous futures
+                  t=BASE+timedelta(minutes=15);write_source(root,source(t),futures(t))
+                  r=evaluate(root,t+timedelta(minutes=1))
+                  assert r['new_marks']==2 and r['new_cohorts']==2
+                  assert r['by_symbol']['BTC']['cohorts']==1
+                  # replay must not duplicate
+                  assert evaluate(root,t+timedelta(minutes=2))['new_marks']==0
+                  # then next mark occurs after a cohort; this becomes the independent baseline entry
+                  t2=BASE+timedelta(minutes=30);write_source(root,source(t2,0.1,0.1),futures(t2))
+                  assert evaluate(root,t2+timedelta(minutes=1))['new_marks']==2
+                  assert evaluate(root,t2+timedelta(minutes=1))['new_cohorts']==0
+                  # Never rewrite the first source signal as newly observed after the bootstrap
+                  marks=list((root/'data/v4_monitor/buy_timing_v4_12/marks').glob('*.jsonl'))
+                  assert sum(len(p.read_text().splitlines()) for p in marks)==4
+                  # missing future => price-only label, without blocking spot mark
+              with tempfile.TemporaryDirectory() as folder:
+                  root=Path(folder)
+                  write_source(root,source(BASE),futures(BASE));evaluate(root,BASE+timedelta(minutes=1))
+                  t=BASE+timedelta(minutes=15);write_source(root,source(t))
+                  (root/'data/coinalyze_derivatives_latest.json').unlink()
+                  r=evaluate(root,t+timedelta(minutes=1));assert r['new_cohorts']==2
+                  cohorts=(root/'data/v4_monitor/buy_timing_v4_12/cohorts/2026-10-28.jsonl').read_text().splitlines()
+                  assert all(json.loads(x)['evidence_grade']=='PRICE_ONLY_SHOCK' for x in cohorts)
+              print('V4.12 TESTS PASSED (forward-only, causal marks, futures evidence, idempotency)')
+          
+          
+          # Additional integration test: prospective exit and paired comparison.
+          def test_matured_comparison():
+              from v4_12_forward_spot import append
+              with tempfile.TemporaryDirectory() as folder:
+                  root=Path(folder)
+                  write_source(root,source(BASE),futures(BASE))
+                  evaluate(root,BASE+timedelta(minutes=1))
+                  start=BASE+timedelta(minutes=15)
+                  write_source(root,source(start),futures(start))
+                  assert evaluate(root,start+timedelta(minutes=1))['new_cohorts']==2
+                  # Simulate subsequent *forward* marks, all first seen at simulated collection times.
+                  base=root/'data/v4_monitor/buy_timing_v4_12'
+                  for minute in range(30, 31+24*60, 15):
+                      at=BASE+timedelta(minutes=minute)
+                      sample=source(at,0.3,0.3)
+                      for sym in ('BTC','ETH'):
+                          m=mark_from_spot(sample,sym,at+timedelta(seconds=10))
+                          if minute==30:
+                              m['price']=80100 if sym=='BTC' else 2410
+                          elif minute>30:
+                              m['price']=80200 if sym=='BTC' else 2415
+                          assert append(base,'marks',m,'mark_id',at)
+                  end=BASE+timedelta(hours=24,minutes=75)
+                  report=evaluate(root,end)
+                  assert report['by_symbol']['BTC']['matched_4h']==1, report
+                  assert report['by_symbol']['ETH']['matched_24h']==1, report
+                  evaluations=ledger(base,'evaluations',end)
+                  assert len(evaluations)==4
+                  for e in evaluations:
+                      assert e['status']=='EVALUATED'
+                      assert set(e['arms'])=={'DIP_NEXT','SPOT_RECOVERY'}
+                      assert e['arms']['DIP_NEXT']['status']=='PAPER_MARK_TO_MARK'
+                      assert e['arms']['SPOT_RECOVERY']['status']=='PAPER_MARK_TO_MARK'
+                      assert e['arms']['DIP_NEXT']['net_pct_by_cost']['0.14'] is not None
+                  assert evaluate(root,end+timedelta(minutes=1))['new_evaluations']==0
+              print('V4.12 MATURED COMPARISON TEST PASS')
+          
+          if __name__=='__main__':
+              tests()
+              test_matured_comparison()
+          V412_TESTS
+          python /tmp/test_v4_12_forward_spot.py
+      - name: Record first-seen spot marks, prospective shocks and paper outcomes
+        run: python /tmp/v4_12_forward_spot.py
+      - name: Check research-only and immutable protocol flags
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/v4_monitor/buy_timing_v4_12')
+          report=json.loads((p/'latest.json').read_text('utf8'))
+          proto=json.loads((p/'protocol.json').read_text('utf8'))
+          assert report['research_only'] and report['orders_enabled'] is False
+          assert proto['no_backfill'] is True
+          assert proto['shock_threshold']==-1.0
+          print('V4.12 protocol and no-orders verified:',report['status'])
+          PY
+      - name: Persist forward-only research without touching other ledgers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5 6; do
+            git add -A data/v4_monitor/buy_timing_v4_12
+            if git diff --cached --quiet; then
+              echo 'No new paper marks or changes to append'
+              exit 0
+            fi
+            git commit -m 'Record V4.12 prospective spot marks and research evaluation'
+            git fetch origin main
+            if git rebase origin/main && git push origin HEAD:main; then
+              echo 'V4.12 research evidence committed'
+              exit 0
+            fi
+            git rebase --abort || true
+            git fetch origin main
+            git reset --hard origin/main
+            python /tmp/v4_12_forward_spot.py
+            sleep "$((attempt*3))"
+          done
+          echo 'Could not persist V4.12 append-only records' >&2
+          exit 1
