@@ -148,10 +148,11 @@ jobs:
                   return None
               try:
                   d=e['arms']['DIP_NEXT'];r=e['arms']['SPOT_RECOVERY']
-                  if d['status'] != 'PAPER_MARK_TO_MARK' or r['status'] != 'PAPER_MARK_TO_MARK':
+                  if d['status'] != 'PAPER_MARK_TO_MARK' or r['status'] not in ('PAPER_MARK_TO_MARK','CASH_NO_SIGNAL','CASH_LATE_ENTRY'):
                       return None
                   a=float(d['net_pct_by_cost'][COST_PCT]);b=float(r['net_pct_by_cost'][COST_PCT])
                   if not math.isfinite(a) or not math.isfinite(b):return None
+                  if r['status'].startswith('CASH') and b != 0:return None
                   return a,b
               except (KeyError,ValueError,TypeError):
                   return None
@@ -179,19 +180,26 @@ jobs:
                   if pair is not None and c['cohort_id'] not in unique:
                       unique[c['cohort_id']] = (*pair,c['evidence_grade'])
               pairs=list(unique.values());deltas=[r-d for d,r,_ in pairs]
+              verified_pairs=[(d,r) for d,r,g in pairs if g=='STRUCTURE_VERIFIED_SHOCK']
+              verified_deltas=[r-d for d,r in verified_pairs]
               mean=lambda a:round(sum(a)/len(a),5) if a else None
               lower=bootstrap_lower(deltas)
+              verified_lower=bootstrap_lower(verified_deltas)
               avg_delta=mean(deltas);rec_avg=mean([r for _,r,_ in pairs])
               # Requires meaningful independent outcomes, not just a positive descriptive mean.
               if len(pairs)<MIN_PAIRED_EPISODES:
                   gate='INSUFFICIENT_PAIRED_PROSPECTIVE_EPISODES'
-              elif lower is not None and lower>0 and rec_avg is not None and rec_avg>0:
+              elif len(verified_pairs)<MIN_PAIRED_EPISODES:
+                  gate='INSUFFICIENT_STRUCTURE_DATA_PAIRED_EPISODES'
+              elif verified_lower is not None and verified_lower>0 and mean([r for _,r in verified_pairs])>0:
                   gate='STATISTICAL_CANDIDATE_REQUIRES_OUT_OF_SAMPLE_CONFIRMATION'
               else:
                   gate='NO_CONFIRMED_RECOVERY_ADVANTAGE'
               return {'paired_independent_cohorts':len(pairs),'minimum_pairs':MIN_PAIRED_EPISODES,
                       'mean_net_recovery_minus_immediate_pp':avg_delta,
                       'bootstrap_95pct_lower_pp':lower,
+                      'structure_data_paired_cohorts':len(verified_pairs),
+                      'structure_data_bootstrap_95pct_lower_pp':verified_lower,
                       'mean_recovery_net_pct':rec_avg,
                       'recovery_outperforms_fraction':round(sum(x>0 for x in deltas)/len(deltas),4) if deltas else None,
                       'grade_counts':{grade:sum(g==grade for _,_,g in pairs) for grade in GRADES},
@@ -267,9 +275,9 @@ jobs:
               t=BASE+timedelta(minutes=minutes)
               return dict(symbol=sym,first_seen_utc=iso(t),bar_end_utc=iso(t-timedelta(minutes=5)),
                           price=price,spot_cvd_1h=cvd,spot_buy_share_1h=share,change_4h_pct=pct,mark_id=sym+str(minutes))
-          def cohort(minutes,sym='BTC',id='case1',price=100):
+          def cohort(minutes,sym='BTC',id='case1',price=100,grade='PRICE_ONLY_SHOCK'):
               return dict(symbol=sym,start_seen_utc=iso(BASE+timedelta(minutes=minutes)),
-                          cohort_id=id,origin_price=price,evidence_grade='PRICE_ONLY_SHOCK')
+                          cohort_id=id,origin_price=price,evidence_grade=grade)
           def pair(id,h=4,dip=-1,recovery=1):
               return {'cohort_id':id,'horizon_h':h,'status':'EVALUATED','orders_enabled':False,
                  'arms':{'DIP_NEXT':{'status':'PAPER_MARK_TO_MARK','net_pct_by_cost':{'0.22':dip}},
@@ -295,15 +303,29 @@ jobs:
               assert stage(mark(21,price=99,cvd=1,share=45),c)=='SHOCK_UNRESOLVED_WAIT'
               assert latest_valid([mark(10),mark(20)],'BTC',now,BASE)['mark_id']=='BTC20'
               assert paired_episode(pair('a'),cohort(20,id='a'),4)==(-1,1)
+              cash=pair('a');cash['arms']['SPOT_RECOVERY']={'status':'CASH_NO_SIGNAL','net_pct_by_cost':{'0.22':0}}
+              assert paired_episode(cash,cohort(20,id='a'),4)==(-1,0)
+              bad_cash=pair('a');bad_cash['arms']['SPOT_RECOVERY']={'status':'CASH_NO_SIGNAL','net_pct_by_cost':{'0.22':1}}
+              assert paired_episode(bad_cash,cohort(20,id='a'),4) is None
               assert paired_episode({**pair('a'),'orders_enabled':True},cohort(20,id='a'),4) is None
               assert effectiveness([pair('a')],[cohort(20,id='a')],'BTC',4)['paired_independent_cohorts']==1
               assert effectiveness([pair('a'),pair('a')],[cohort(20,id='a')],'BTC',4)['paired_independent_cohorts']==1
               assert bootstrap_lower([2]*29) is None
               assert bootstrap_lower([2]*30)==2
               assert effectiveness([pair(str(i),dip=0.1,recovery=1.1) for i in range(30)],
-                                   [cohort(20,id=str(i)) for i in range(30)],'BTC',4)['inference_gate']=='STATISTICAL_CANDIDATE_REQUIRES_OUT_OF_SAMPLE_CONFIRMATION'
+                                   [cohort(20,id=str(i),grade='STRUCTURE_VERIFIED_SHOCK') for i in range(30)],'BTC',4)['inference_gate']=='STATISTICAL_CANDIDATE_REQUIRES_OUT_OF_SAMPLE_CONFIRMATION'
               assert effectiveness([pair(str(i),dip=1.1,recovery=0.1) for i in range(30)],
-                                   [cohort(20,id=str(i)) for i in range(30)],'BTC',4)['inference_gate']=='NO_CONFIRMED_RECOVERY_ADVANTAGE'
+                                   [cohort(20,id=str(i),grade='STRUCTURE_VERIFIED_SHOCK') for i in range(30)],'BTC',4)['inference_gate']=='NO_CONFIRMED_RECOVERY_ADVANTAGE'
+              assert effectiveness([pair(str(i),dip=0.1,recovery=1.1) for i in range(30)],
+                                   [cohort(20,id=str(i)) for i in range(30)],'BTC',4)['inference_gate']=='INSUFFICIENT_STRUCTURE_DATA_PAIRED_EPISODES'
+              cash_cases=[]
+              for i in range(30):
+                  cp=pair(str(i),dip=0.5,recovery=0)
+                  cp['arms']['SPOT_RECOVERY']['status']='CASH_NO_SIGNAL'
+                  cash_cases.append(cp)
+              cash_result=effectiveness(cash_cases,[cohort(20,id=str(i),grade='STRUCTURE_VERIFIED_SHOCK') for i in range(30)],'BTC',4)
+              assert cash_result['paired_independent_cohorts']==30
+              assert cash_result['inference_gate']=='NO_CONFIRMED_RECOVERY_ADVANTAGE'
               with tempfile.TemporaryDirectory() as temp:
                   base=Path(temp)/'data/v4_monitor/buy_timing_v4_12'
                   base.mkdir(parents=True)
@@ -320,7 +342,7 @@ jobs:
                   (base/'cohorts/2026-10-28.jsonl').write_text(json.dumps(cohort(20))+'\n')
                   report=evaluate(temp,now)
                   assert report['assets']['BTC']['current_research_state']=='SHOCK_WAITING_NEXT_OBSERVATION'
-              print('V4.13 tests passed (24 assertions, including future leakage, sparse inference, duplicates)')
+              print('V4.13 tests passed (including future leakage, cash non-entry, structure-data gating, sparse inference, duplicates)')
           if __name__=='__main__':test()
           V413_TESTS
           PYTHONPATH=/tmp python /tmp/test_decision_readiness.py
