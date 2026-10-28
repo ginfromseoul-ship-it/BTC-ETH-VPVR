@@ -1,0 +1,331 @@
+name: BTC ETH V4.11 External Scheduler Quality Impact No Orders
+# New read-only audit; never edits V4 ledgers or collector workflows.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '37 */4 * * *'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: btc-eth-v411-quality-readonly
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout prospective BTC ETH observations
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Measure GitHub run history and verified observation bins
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/v411_audit.py <<'V411_PY'
+          #!/usr/bin/env python3
+          """V4.11 read-only, time-causal, observational collection quality audit.
+          External worker inception: 2026-10-28 08:40 KST. No trading and no ledgers changed.
+          """
+          import json
+          import os
+          import sys
+          import urllib.request
+          from collections import defaultdict
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          from urllib.parse import quote, urlencode
+          
+          UTC = timezone.utc
+          ANCHOR = datetime(2026, 10, 27, 23, 40, tzinfo=UTC)  # 2026-10-28 08:40 KST
+          FIFTEEN = timedelta(minutes=15)
+          REPO = 'ginfromseoul-ship-it/BTC-ETH-VPVR'
+          WORKFLOWS = {'spot': 'market_flow.yml', 'derivatives': 'coinalyze.yml'}
+          SYMBOLS = ('BTC', 'ETH')
+          VERSION = 'v4_11_collector_impact_readonly_2026-10-28_01'
+          
+          
+          def utc(s):
+              d = datetime.fromisoformat(s.replace('Z', '+00:00'))
+              if d.tzinfo is None:
+                  raise ValueError('Unzoned time')
+              return d.astimezone(UTC)
+          
+          
+          def zulu(d):
+              return d.astimezone(UTC).isoformat(timespec='seconds').replace('+00:00', 'Z')
+          
+          
+          def slot(d):
+              return ANCHOR + timedelta(seconds=int((d - ANCHOR).total_seconds() // 900) * 900)
+          
+          
+          def slots_count(start, end):
+              sec = (end - start).total_seconds()
+              if sec < 0 or sec % 900:
+                  raise ValueError('Window not aligned to 15 minutes')
+              return int(sec // 900)
+          
+          
+          def get_runs(repo, workflow, earliest, latest, token, fetcher=None):
+              """Page all workflows in the date window; fail closed on API errors/truncation."""
+              fetcher = fetcher or urllib.request.urlopen
+              runs = []
+              for page in range(1, 16):
+                  params = urlencode({'per_page': 100, 'page': page, 'created': zulu(earliest) + '..' + zulu(latest)})
+                  endpoint = 'https://api.github.com/repos/' + repo + '/actions/workflows/' + quote(workflow, safe='') + '/runs?' + params
+                  req = urllib.request.Request(endpoint, headers={
+                      'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + token,
+                      'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'btc-eth-v411-readonly'})
+                  with fetcher(req, timeout=20) as response:
+                      result = json.load(response)
+                  batch = result.get('workflow_runs')
+                  if not isinstance(batch, list):
+                      raise ValueError('GitHub workflow API schema invalid')
+                  runs.extend(batch)
+                  if len(batch) < 100:
+                      return runs
+              raise ValueError('Run-history pagination limit reached; refusing partial evidence')
+          
+          
+          def load_snapshots(root, first, last):
+              folder = Path(root) / 'data/v4_monitor/snapshots'
+              rows = []
+              if not folder.exists():
+                  raise FileNotFoundError('Prospective snapshot directory missing')
+              first_day = (first - timedelta(days=1)).date().isoformat()
+              last_day = last.date().isoformat()
+              for p in sorted(folder.glob('*.jsonl')):
+                  if not first_day <= p.stem <= last_day:
+                      continue
+                  for line in p.read_text(encoding='utf-8').splitlines():
+                      if not line.strip():
+                          continue
+                      x = json.loads(line)  # Parse errors must fail; no quiet undercounting.
+                      t = utc(x['first_seen_utc'])
+                      if first <= t < last:
+                          rows.append((t, x))
+              return rows
+          
+          
+          def valid_snapshot(x, t):
+              try:
+                  p = x.get('reference_close_usdt')
+                  a = utc(x['spot_bar_end_utc'])
+                  b = utc(x['futures_bar_end_utc'])
+                  return (x.get('state') not in (None, 'DATA_UNAVAILABLE')
+                          and x.get('spot_price_observation_usable') is True
+                          and not x.get('missing') and isinstance(p, (int, float))
+                          and not isinstance(p, bool) and p > 0
+                          and a <= t and b <= t
+                          and abs((a - b).total_seconds()) <= 15 * 60)
+              except (ValueError, KeyError, TypeError):
+                  return False
+          
+          
+          def snapshot_stats(rows, symbol, start, end):
+              events = {}
+              for t, x in rows:
+                  if x.get('symbol') != symbol or not (start <= t < end):
+                      continue
+                  key = (symbol, x.get('snapshot_id') or x.get('first_seen_utc'))
+                  events.setdefault(key, (t, x))
+              collected = sorted(events.values(), key=lambda v: v[0])
+              bars = defaultdict(list)
+              valid_times = set()
+              for t, x in collected:
+                  if valid_snapshot(x, t):
+                      valid_times.add(slot(t))
+                  bar = x.get('spot_bar_end_utc')
+                  if isinstance(bar, str):
+                      bars[bar].append((t, x))
+              initial, final, recovered, durations, first_valid = 0, 0, 0, [], []
+              for revisions in bars.values():
+                  revisions.sort(key=lambda v:v[0])
+                  first_ok = valid_snapshot(*revisions[0][::-1])  # x, t
+                  any_ok = [(t, x) for t, x in revisions if valid_snapshot(x, t)]
+                  initial += int(first_ok)
+                  final += int(bool(any_ok))
+                  if any_ok:
+                      first_valid.append(any_ok[0][0])
+                  if not first_ok and any_ok:
+                      recovered += 1
+                      durations.append(round((any_ok[0][0] - revisions[0][0]).total_seconds() / 60, 2))
+              first_valid.sort()
+              gaps = [round((b - a).total_seconds() / 60, 2) for a, b in zip(first_valid, first_valid[1:])]
+              return {
+                  'events': len(collected), 'valid_events': sum(valid_snapshot(x, t) for t, x in collected),
+                  'distinct_spot_bars': len(bars), 'initially_valid_spot_bars': initial,
+                  'eventually_valid_spot_bars': final, 'recovered_invalid_to_valid_bars': recovered,
+                  'unresolved_spot_bars': len(bars) - final,
+                  'recovery_lags_minutes': durations,
+                  'verified_snapshot_15min_bins': len(valid_times),
+                  'snapshot_bin_coverage_pct': round(100 * len(valid_times) / slots_count(start, end), 2),
+                  'max_gap_between_first_valid_bars_minutes': max(gaps) if gaps else None,
+                  'gaps_between_first_valid_bars_over_90min': sum(v > 90 for v in gaps),
+                  'gap_metric_boundary_censored': True,
+              }
+          
+          
+          def run_stats(runs, start, end):
+              selected = []
+              for x in runs:
+                  t = utc(x['created_at'])
+                  if start <= t < end:
+                      selected.append((t, x))
+              success = [(t, x) for t, x in selected if x.get('status') == 'completed' and x.get('conclusion') == 'success']
+              bins = {slot(t) for t, _ in success}
+              success_times = sorted(t for t, _ in success)
+              intervals = [round((b - a).total_seconds() / 60, 2) for a, b in zip(success_times, success_times[1:])]
+              return {
+                  'total_starts': len(selected), 'successful_runs': len(success),
+                  'scheduled_starts': sum(x.get('event') == 'schedule' for _,x in selected),
+                  'dispatch_starts': sum(x.get('event') == 'workflow_dispatch' for _,x in selected),
+                  'other_starts': sum(x.get('event') not in ('schedule', 'workflow_dispatch') for _,x in selected),
+                  'success_15min_bins': len(bins),
+                  'success_bin_coverage_pct': round(100 * len(bins) / slots_count(start, end), 2),
+                  'longest_success_to_success_gap_minutes': max(intervals) if intervals else None,
+                  'success_intervals_over_30min': sum(g > 30 for g in intervals),
+                  'missing_run_bins': slots_count(start, end) - len(bins),
+              }
+          
+          
+          def compute(rows, runs_by_source, asof):
+              # Exclude currently incomplete 15-minute period. All anchored windows are exact.
+              end = slot(asof)
+              elapsed_slots = max(0, min(slots_count(ANCHOR, end) if end >= ANCHOR else 0, 96))
+              if elapsed_slots == 0:
+                  return {'version': VERSION, 'generated_utc': zulu(asof), 'status': 'NOT_STARTED', 'research_only': True}
+              delta = elapsed_slots * FIFTEEN
+              before = (ANCHOR - delta, ANCHOR)
+              after = (ANCHOR, ANCHOR + delta)
+              def collect(window):
+                  s, e = window
+                  return {'start_utc': zulu(s), 'end_utc': zulu(e), '15min_slots': slots_count(s,e),
+                          'collectors': {k: run_stats(runs_by_source[k],s,e) for k in WORKFLOWS},
+                          'snapshots': {sym: snapshot_stats(rows,sym,s,e) for sym in SYMBOLS}}
+              pre = collect(before)
+              post = collect(after)
+              status = 'FULL_24H_DESCRIPTIVE_READY' if elapsed_slots == 96 else 'SHORT_PILOT_INCOMPLETE_24H'
+              diff = {'successful_run_bin_change_pp': {
+                          k: round(post['collectors'][k]['success_bin_coverage_pct'] - pre['collectors'][k]['success_bin_coverage_pct'], 2)
+                          for k in WORKFLOWS},
+                      'verified_snapshot_bin_change_pp': {
+                          k: round(post['snapshots'][k]['snapshot_bin_coverage_pct'] - pre['snapshots'][k]['snapshot_bin_coverage_pct'], 2)
+                          for k in SYMBOLS}}
+              report = {
+                  'version': VERSION, 'generated_utc': zulu(asof), 'inception_utc': zulu(ANCHOR),
+                  'status': status, 'research_only': True, 'orders_enabled': False,
+                  'synthetic_data_created': False, 'repository_modified': False,
+                  'window_duration_minutes': elapsed_slots * 15,
+                  'before': pre, 'after': post, 'descriptive_differences': diff,
+                  'limitations': [
+                      'Clock-time bins are not proof of on-time scheduled execution; delayed runs can shift bins.',
+                      'workflow_dispatch also includes V4.6 rescue/manual runs: cannot attribute each run to Cloudflare without an execution source marker.',
+                      'GitHub workflow success is not proof that every upstream market field is complete.',
+                      'Snapshot bins measure stored fully verified V4 observations, not all 5-minute market bars.',
+                      'Recovery revisions are counted at their actual first-seen time; never backfilled into earlier windows.',
+                      'Max-gap statistics omit boundary gaps and become unreliable for short samples.',
+                      'Pre/post differences are descriptive and not causal proof; no buy-edge validation.',
+                  ]}
+              if asof >= ANCHOR + timedelta(hours=48):
+                  later = collect((ANCHOR + timedelta(hours=24), ANCHOR + timedelta(hours=48)))
+                  report['second_post_24h'] = later
+                  report['status'] = 'TWO_POST_24H_WINDOWS_READY'
+              return report
+          
+          
+          def test():
+              def dt(minute):return ANCHOR + timedelta(minutes=minute)
+              def row(m, sym='BTC', state='NO_DOWNTURN_SETUP', bar_offset=5, missing=None):
+                  t=dt(m)
+                  x={'snapshot_id':f'{sym}_{m}_{state}', 'symbol':sym, 'first_seen_utc':zulu(t),
+                     'spot_bar_end_utc':zulu(t-timedelta(minutes=bar_offset)),
+                     'futures_bar_end_utc':zulu(t-timedelta(minutes=bar_offset+5)),
+                     'reference_close_usdt':100,'spot_price_observation_usable':True,
+                     'missing':missing or [],'state':state}
+                  return t,x
+              assert slot(dt(29))==dt(15)
+              assert slots_count(dt(0),dt(60))==4
+              assert valid_snapshot(*row(2)[::-1]);assert not valid_snapshot(*row(2,state='DATA_UNAVAILABLE')[::-1])
+              t,x=row(2);x['spot_bar_end_utc']=zulu(dt(3));assert not valid_snapshot(x,t)
+              t,x=row(2);x['futures_bar_end_utc']=zulu(dt(-20));assert not valid_snapshot(x,t)
+              b0=row(-20,state='DATA_UNAVAILABLE');b1=row(-10)
+              b1[1]['spot_bar_end_utc']=b0[1]['spot_bar_end_utc']
+              b1[1]['futures_bar_end_utc']=zulu(dt(-25))
+              assert snapshot_stats([b0,b1],'BTC',dt(-30),dt(0))['recovered_invalid_to_valid_bars']==1
+              assert snapshot_stats([b0,b1],'BTC',dt(-30),dt(-15))['eventually_valid_spot_bars']==0
+              assert snapshot_stats([b0,b1],'BTC',dt(-30),dt(0))['distinct_spot_bars']==1
+              assert snapshot_stats([b0,b1],'BTC',dt(-30),dt(0))['verified_snapshot_15min_bins']==1
+              r={'created_at':zulu(dt(0)),'event':'workflow_dispatch','status':'completed','conclusion':'success'}
+              assert run_stats([r,r],dt(0),dt(60))['success_15min_bins']==1
+              assert run_stats([r],dt(-60),dt(0))['success_15min_bins']==0
+              sample=compute([],{'spot':[r],'derivatives':[]},dt(60))
+              assert sample['status']=='SHORT_PILOT_INCOMPLETE_24H'
+              assert sample['after']['collectors']['spot']['success_15min_bins']==1
+              assert sample['before']['collectors']['spot']['success_15min_bins']==0
+              assert sample['after']['snapshots']['BTC']['distinct_spot_bars']==0
+              assert compute([],{'spot':[],'derivatives':[]},ANCHOR+timedelta(hours=25))['status']=='FULL_24H_DESCRIPTIVE_READY'
+              assert compute([],{'spot':[],'derivatives':[]},ANCHOR+timedelta(hours=49))['status']=='TWO_POST_24H_WINDOWS_READY'
+              assert compute([],{'spot':[],'derivatives':[]},ANCHOR-timedelta(hours=1))['status']=='NOT_STARTED'
+              print('V4.11 self-tests PASS')
+          
+          
+          def main():
+              if '--test' in sys.argv:
+                  test();return
+              token=os.environ.get('GH_TOKEN')
+              if not token:
+                  raise RuntimeError('GH_TOKEN absent')
+              now=datetime.now(UTC)
+              needed_from = ANCHOR-timedelta(hours=24)
+              needed_to = min(now, ANCHOR + timedelta(hours=48))
+              rows=load_snapshots(Path('.'), needed_from, needed_to)
+              runs={k:get_runs(REPO,path,needed_from,needed_to,token) for k,path in WORKFLOWS.items()}
+              report=compute(rows,runs,now)
+              out=Path('/tmp/v411_report.json');out.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              print('V4_11_IMPACT '+json.dumps({k:report.get(k) for k in ('status','window_duration_minutes','descriptive_differences')},ensure_ascii=False))
+              if 'before' in report:
+                  lines=['## BTC ETH V4.11 observational coverage audit', '',
+                         f'Status: `{report["status"]}` · Window: {report["window_duration_minutes"]} min pre / post',
+                         '', '| Measure | Before | After |','|---|---:|---:|']
+                  for k in WORKFLOWS:
+                      lines.append(f'| {k} run-success 15m bins (%) | {report["before"]["collectors"][k]["success_bin_coverage_pct"]} | {report["after"]["collectors"][k]["success_bin_coverage_pct"]} |')
+                  for sym in SYMBOLS:
+                      lines.append(f'| {sym} validated snapshot bins (%) | {report["before"]["snapshots"][sym]["snapshot_bin_coverage_pct"]} | {report["after"]["snapshots"][sym]["snapshot_bin_coverage_pct"]} |')
+                      lines.append(f'| {sym} distinct validated spot bars | {report["before"]["snapshots"][sym]["eventually_valid_spot_bars"]} | {report["after"]["snapshots"][sym]["eventually_valid_spot_bars"]} |')
+                  lines.extend(['','**No attribution of individual dispatch to Cloudflare; observational pre/post only. No trading.**'])
+                  summary=os.environ.get('GITHUB_STEP_SUMMARY')
+                  if summary:
+                      with open(summary,'a',encoding='utf8') as f:f.write('\n'.join(lines)+'\n')
+          
+          if __name__=='__main__':main()
+          V411_PY
+          python /tmp/v411_audit.py --test
+          python /tmp/v411_audit.py
+          python - <<'VERIFY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('/tmp/v411_report.json').read_text(encoding='utf-8'))
+          assert data['research_only'] is True
+          if data['status']!='NOT_STARTED':
+              assert data['orders_enabled'] is False
+              assert data['synthetic_data_created'] is False
+              assert data['repository_modified'] is False
+              assert set(data['after']['collectors'])=={'spot','derivatives'}
+          print('V4.11 safety invariants PASS')
+          VERIFY
+      - name: Upload read-only evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: v411-collection-quality-${{ github.run_id }}
+          path: /tmp/v411_report.json
+          retention-days: 30
+          if-no-files-found: error
