@@ -31,6 +31,195 @@ jobs:
           COINALYZE_API_KEY: ${{ secrets.COINALYZE_API_KEY }}
         run: python coinalyze_collector.py
 
+      - name: Preserve only previously verified and still-time-valid 1h liquidation bins
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import math
+          import subprocess
+          from copy import deepcopy
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          UTC = timezone.utc
+          MAX_1H_CARRY_AGE = timedelta(minutes=75)  # downstream hard cap: 90 minutes
+          DATA_PATH = Path('data/coinalyze_derivatives_latest.json')
+
+          def dt(text):
+              if not isinstance(text, str):
+                  raise ValueError('not a time string')
+              val = datetime.fromisoformat(text.replace('Z', '+00:00'))
+              if val.tzinfo is None:
+                  raise ValueError('timestamp missing timezone')
+              return val.astimezone(UTC)
+
+          def valid_number(val):
+              return isinstance(val, (int, float)) and not isinstance(val, bool) and math.isfinite(val) and val >= 0
+
+          def validated_prior_window(window, when):
+              if not isinstance(window, dict) or window.get('status') != 'ok':
+                  return False
+              if window.get('source_interval') not in ('15min', '1hour'):
+                  return False
+              if window.get('is_bucket_aligned') is not True:
+                  return False
+              try:
+                  a, b = dt(window.get('start_utc')), dt(window.get('end_utc'))
+              except (ValueError, TypeError, OverflowError):
+                  return False
+              if b - a != timedelta(hours=1) or not timedelta(0) <= when - b <= MAX_1H_CARRY_AGE:
+                  return False
+              l, s, total = (window.get(k) for k in
+                             ('long_liquidations_usd', 'short_liquidations_usd', 'total_liquidations_usd'))
+              return all(map(valid_number, (l, s, total))) and abs(l + s - total) <= 0.04
+
+          def preserve(prior, current):
+              if not isinstance(prior, dict) or not isinstance(current, dict):
+                  return [], current
+              try:
+                  asof = dt(current.get('generated_utc'))
+                  prior_asof = dt(prior.get('generated_utc'))
+              except (ValueError, TypeError, OverflowError):
+                  return [], current
+              if prior_asof > asof or asof - prior_asof > timedelta(hours=2):
+                  return [], current
+              changed = []
+              for symbol in ('BTC', 'ETH'):
+                  old = prior.get('assets', {}).get(symbol, {})
+                  new = current.get('assets', {}).get(symbol, {})
+                  if not isinstance(old, dict) or not isinstance(new, dict):
+                      continue
+                  if not old.get('symbol_coinalyze') or old.get('symbol_coinalyze') != new.get('symbol_coinalyze'):
+                      continue
+                  if old.get('venue') != new.get('venue'):
+                      continue
+                  old_liq, new_liq = old.get('liquidations', {}), new.get('liquidations', {})
+                  if not isinstance(old_liq, dict) or not isinstance(new_liq, dict):
+                      continue
+                  win_old = old_liq.get('windows', {}).get('1h', {})
+                  win_new = new_liq.get('windows', {}).get('1h', {})
+                  if isinstance(win_new, dict) and win_new.get('status') == 'ok':
+                      continue  # actual freshly verified vendor data always wins
+                  if not validated_prior_window(win_old, asof):
+                      continue  # missing/incomplete/stale bars are never guessed as zero
+                  # This period must have existed when the prior file was actually generated.
+                  # A timestamp that became available only after that report cannot be carried.
+                  if dt(win_old['end_utc']) > prior_asof:
+                      continue
+                  original_seen = win_old.get('original_verification_report_utc', prior['generated_utc'])
+                  try:
+                      original_time = dt(original_seen)
+                  except (TypeError, ValueError, OverflowError):
+                      continue
+                  if original_time > prior_asof or dt(win_old['end_utc']) > original_time:
+                      continue
+                  src = deepcopy(win_old)
+                  src['carried_forward_from_prior_verified_report'] = True
+                  src['original_verification_report_utc'] = win_old.get('original_verification_report_utc', prior.get('generated_utc'))
+                  src['carried_forward_at_utc'] = current['generated_utc']
+                  src['age_seconds_at_collection'] = int((asof - dt(src['end_utc'])).total_seconds())
+                  src['data_freshness_note'] = 'Previously verified vendor 1h interval; not a current rolling-hour estimate'
+                  new_liq.setdefault('windows', {})['1h'] = src
+                  # Overall quality is never marked complete if 4h/24h are missing.
+                  statuses = [new_liq['windows'].get(k, {}).get('status') for k in ('1h', '4h', '24h')]
+                  new_liq['status'] = 'ok' if all(v == 'ok' for v in statuses) else 'partial'
+                  ends = [v.get('end_utc') for v in new_liq['windows'].values()
+                          if isinstance(v, dict) and v.get('status') == 'ok' and v.get('end_utc')]
+                  if ends:
+                      new_liq['last_complete_data_utc'] = max(ends, key=dt)
+                  new.setdefault('quality', {})['liquidations'] = new_liq['status']
+                  changed.append(symbol)
+              if changed:
+                  # Collector status is descriptive and must not claim all horizons complete.
+                  all_ok = all(asset.get('quality', {}).get(k) == 'ok' for asset in current.get('assets', {}).values()
+                               for k in ('open_interest', 'liquidations', 'futures_flow', 'funding'))
+                  horizons_ok = all(asset.get('liquidations', {}).get('windows', {}).get(h, {}).get('status') == 'ok'
+                                    and asset.get('open_interest', {}).get('changes', {}).get(h, {}).get('status') == 'ok'
+                                    and asset.get('futures_flow', {}).get('windows', {}).get(h, {}).get('status') == 'ok'
+                                    for asset in current.get('assets', {}).values() for h in ('1h', '4h', '24h'))
+                  current['quality_status'] = 'complete' if all_ok and horizons_ok else 'partial'
+              return changed, current
+
+          def fixture(t='2026-10-29T00:02:00Z'):
+              win = {'status':'ok', 'start_utc':'2026-10-28T22:00:00Z',
+                     'end_utc':'2026-10-28T23:00:00Z', 'source_interval':'1hour',
+                     'is_bucket_aligned':True, 'long_liquidations_usd':10.,
+                     'short_liquidations_usd':5., 'total_liquidations_usd':15.}
+              old={'generated_utc':'2026-10-28T23:50:00Z', 'assets':{}}
+              new={'generated_utc':t, 'assets':{}, 'quality_status':'partial'}
+              for k in ('BTC', 'ETH'):
+                  info={'venue':'Binance (via Coinalyze)','symbol_coinalyze':k+'USDT_PERP.A',
+                        'quality':{'liquidations':'ok'}, 'liquidations':{'status':'ok', 'windows':{'1h':deepcopy(win)}}}
+                  old['assets'][k] = deepcopy(info)
+                  newer = deepcopy(info)
+                  newer['quality']['liquidations']='unavailable'
+                  newer['liquidations']={'status':'unavailable','windows':{'1h':{'status':'unavailable'},
+                                             '4h':{'status':'unavailable'},'24h':{'status':'unavailable'}}}
+                  new['assets'][k] = newer
+              return old, new
+
+          def selftest():
+              old, new = fixture()
+              changed, merged = preserve(old, new)
+              assert changed == ['BTC','ETH']
+              assert merged['assets']['BTC']['liquidations']['windows']['1h']['age_seconds_at_collection'] == 3720
+              assert merged['assets']['BTC']['liquidations']['windows']['1h']['original_verification_report_utc'] == old['generated_utc']
+              assert merged['assets']['ETH']['liquidations']['status'] == 'partial'
+              assert merged['quality_status'] == 'partial'
+              again, _ = preserve(old, merged)
+              assert again == []  # never overwrite a verified window
+              old, new = fixture('2026-10-29T00:20:00Z')  # 80 minutes: invalid
+              assert preserve(old, new)[0] == []
+              old, new = fixture()
+              old['assets']['BTC']['symbol_coinalyze'] = 'WRONG'
+              assert preserve(old, new)[0] == ['ETH']
+              old, new = fixture()
+              old['assets']['BTC']['liquidations']['windows']['1h']['short_liquidations_usd'] = -5
+              assert preserve(old, new)[0] == ['ETH']
+              old, new = fixture()
+              old['assets']['BTC']['liquidations']['windows']['1h']['start_utc'] = '2026-10-28T21:00:00Z'
+              assert preserve(old, new)[0] == ['ETH']
+              old, new = fixture()
+              old['generated_utc'] = '2026-10-29T00:30:00Z'
+              assert preserve(old, new)[0] == []  # no future knowledge
+              old, new = fixture()
+              new['assets']['BTC']['liquidations']['windows']['1h'] = deepcopy(old['assets']['BTC']['liquidations']['windows']['1h'])
+              assert preserve(old, new)[0] == ['ETH']
+              old, new = fixture()
+              old['assets']['BTC']['liquidations']['windows']['1h']['source_interval'] = '4hour'
+              assert preserve(old, new)[0] == ['ETH']
+              old, new = fixture()
+              old['assets']['BTC']['liquidations']['windows']['1h']['total_liquidations_usd'] = 17
+              assert preserve(old, new)[0] == ['ETH']
+              old, new = fixture()
+              old['assets']['BTC']['liquidations']['windows']['1h']['end_utc'] = '2026-10-29T00:10:00Z'
+              assert preserve(old, new)[0] == ['ETH']
+              old, new = fixture()
+              old['generated_utc'] = '2026-10-28T22:59:00Z'  # future bin relative to source report
+              assert preserve(old, new)[0] == []
+              old, new = fixture()
+              old['assets']['ETH']['liquidations']['windows']['1h']['original_verification_report_utc'] = '2026-10-29T00:30:00Z'
+              assert preserve(old, new)[0] == ['BTC']
+              print('Coinalyze verified-liquidation carry guard: 13 regression cases PASS')
+
+          selftest()
+          try:
+              prior = json.loads(subprocess.check_output(
+                  ['git','show','HEAD:data/coinalyze_derivatives_latest.json'], stderr=subprocess.DEVNULL))
+          except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError):
+              print('No prior verified derivatives source available; no carry attempted')
+          else:
+              fresh = json.loads(DATA_PATH.read_text(encoding='utf-8'))
+              symbols, merged = preserve(prior, fresh)
+              if symbols:
+                  tmp = DATA_PATH.with_suffix('.verified.tmp')
+                  tmp.write_text(json.dumps(merged, ensure_ascii=False, allow_nan=False, indent=2), encoding='utf-8')
+                  tmp.replace(DATA_PATH)
+              print('Verified 1h liquidation window carry status:', symbols or 'none (new vendor data used or prior unavailable)')
+          PY
+
       - name: Save results with concurrent commit retry
         shell: bash
         run: |
