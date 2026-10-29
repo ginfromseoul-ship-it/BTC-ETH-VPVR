@@ -1,22 +1,22 @@
 {
   "version": "v4_2_operational_observed_coverage_2026-10-29_01",
-  "audit_utc": "2026-10-29T00:25:42Z",
-  "status": "BLOCKED",
-  "audit_run_id": "40793954518-1",
+  "audit_utc": "2026-10-29T00:30:30Z",
+  "status": "DEGRADED_STRUCTURE_OBSERVATIONS",
+  "audit_run_id": "40794477489-1",
   "trigger": {
     "event_name": "workflow_run",
-    "upstream_workflow": "BTC ETH Market Flow 15min"
+    "upstream_workflow": "BTC ETH Coinalyze Derivatives"
   },
-  "v4_monitor_generated_utc": "2026-10-29T00:25:36Z",
+  "v4_monitor_generated_utc": "2026-10-29T00:30:23Z",
   "observer_version": "v4_prospective_paper_2026-10-26_01",
-  "new_snapshots_saved": 2,
+  "new_snapshots_saved": 0,
   "new_paper_entries": 0,
   "new_forward_outcomes": 0,
   "sources": {
     "spot": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-27T22:55:42Z",
-      "observed_window_end_utc": "2026-10-28T22:55:42Z",
+      "observed_window_start_utc": "2026-10-27T23:00:30Z",
+      "observed_window_end_utc": "2026-10-28T23:00:30Z",
       "expected_slots": 96,
       "observed_scheduled_starts": 29,
       "approximate_start_coverage_pct": 30.21,
@@ -29,13 +29,13 @@
     },
     "derivatives": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-27T22:55:42Z",
-      "observed_window_end_utc": "2026-10-28T22:55:42Z",
+      "observed_window_start_utc": "2026-10-27T23:00:30Z",
+      "observed_window_end_utc": "2026-10-28T23:00:30Z",
       "expected_slots": 96,
-      "observed_scheduled_starts": 32,
-      "approximate_start_coverage_pct": 33.33,
-      "scheduled_completed": 32,
-      "scheduled_success": 32,
+      "observed_scheduled_starts": 33,
+      "approximate_start_coverage_pct": 34.38,
+      "scheduled_completed": 33,
+      "scheduled_success": 33,
       "scheduled_failure": 0,
       "median_start_interval_min": 44.78,
       "largest_start_interval_min": 68.67,
@@ -44,37 +44,31 @@
   },
   "assets": {
     "BTC": {
-      "status": "BLOCKED_OR_STALE",
-      "model_state": "DATA_UNAVAILABLE",
-      "spot_bar_age_minutes": 0.71,
-      "futures_bar_age_minutes": 20.71,
-      "spot_collector_age_minutes": 0.49,
-      "derivatives_collector_age_minutes": 15.57,
-      "cross_source_end_skew_minutes": 20.0,
-      "failed_checks": [
-        "cross_source_bar_skew_ok",
-        "usable_model_decision"
-      ]
+      "status": "FRESH_AND_USABLE",
+      "model_state": "NO_DOWNTURN_SETUP",
+      "spot_bar_age_minutes": 5.5,
+      "futures_bar_age_minutes": 5.5,
+      "spot_collector_age_minutes": 5.29,
+      "derivatives_collector_age_minutes": 0.39,
+      "cross_source_end_skew_minutes": 0.0,
+      "failed_checks": []
     },
     "ETH": {
-      "status": "BLOCKED_OR_STALE",
-      "model_state": "DATA_UNAVAILABLE",
-      "spot_bar_age_minutes": 0.71,
-      "futures_bar_age_minutes": 20.71,
-      "spot_collector_age_minutes": 0.49,
-      "derivatives_collector_age_minutes": 15.57,
-      "cross_source_end_skew_minutes": 20.0,
-      "failed_checks": [
-        "cross_source_bar_skew_ok",
-        "usable_model_decision"
-      ]
+      "status": "FRESH_AND_USABLE",
+      "model_state": "NO_DOWNTURN_SETUP",
+      "spot_bar_age_minutes": 5.5,
+      "futures_bar_age_minutes": 5.5,
+      "spot_collector_age_minutes": 5.29,
+      "derivatives_collector_age_minutes": 0.39,
+      "cross_source_end_skew_minutes": 0.0,
+      "failed_checks": []
     }
   },
   "observed_data_coverage": {
     "version": "observation_bins_20261029_01",
     "status": "VERIFIED",
-    "window_start_utc": "2026-10-28T00:00:00Z",
-    "window_end_utc": "2026-10-29T00:00:00Z",
+    "window_start_utc": "2026-10-28T00:15:00Z",
+    "window_end_utc": "2026-10-29T00:15:00Z",
     "maturity_minutes": 15,
     "slots_expected": 96,
     "goals_pct": {
@@ -85,42 +79,42 @@
       "BTC": {
         "observed_bins": 96,
         "spot_valid_bins": 96,
-        "structure_valid_bins": 81,
+        "structure_valid_bins": 82,
         "spot_coverage_pct": 100.0,
-        "structure_coverage_pct": 84.38,
+        "structure_coverage_pct": 85.42,
         "missing_spot_bins": 0,
-        "missing_structure_bins": 15,
+        "missing_structure_bins": 14,
         "structure_gap_reason_bin_counts": {
-          "invalid_liquidations_1h": 4,
-          "liquidations_not_verified": 4,
-          "missing_core_features": 4,
+          "invalid_liquidations_1h": 3,
+          "liquidations_not_verified": 3,
+          "missing_core_features": 3,
           "unsynchronized_spot_futures": 11
         },
-        "last_spot_valid_bin_utc": "2026-10-28T23:45:00Z",
-        "last_structure_valid_bin_utc": "2026-10-28T23:45:00Z",
+        "last_spot_valid_bin_utc": "2026-10-29T00:00:00Z",
+        "last_structure_valid_bin_utc": "2026-10-29T00:00:00Z",
         "structure_ready_is_not_absorption_proof": true
       },
       "ETH": {
         "observed_bins": 96,
         "spot_valid_bins": 96,
-        "structure_valid_bins": 77,
+        "structure_valid_bins": 78,
         "spot_coverage_pct": 100.0,
-        "structure_coverage_pct": 80.21,
+        "structure_coverage_pct": 81.25,
         "missing_spot_bins": 0,
-        "missing_structure_bins": 19,
+        "missing_structure_bins": 18,
         "structure_gap_reason_bin_counts": {
-          "invalid_liquidations_1h": 8,
-          "liquidations_not_verified": 8,
-          "missing_core_features": 8,
+          "invalid_liquidations_1h": 7,
+          "liquidations_not_verified": 7,
+          "missing_core_features": 7,
           "unsynchronized_spot_futures": 11
         },
-        "last_spot_valid_bin_utc": "2026-10-28T23:45:00Z",
-        "last_structure_valid_bin_utc": "2026-10-28T23:45:00Z",
+        "last_spot_valid_bin_utc": "2026-10-29T00:00:00Z",
+        "last_structure_valid_bin_utc": "2026-10-29T00:00:00Z",
         "structure_ready_is_not_absorption_proof": true
       }
     },
     "method": "At least one causally valid V4.1 prospective snapshot first-seen in each fixed UTC 15m bin; not exchange ticks, executable prices, or completed shock outcomes.",
-    "rows_in_window": 243,
+    "rows_in_window": 239,
     "malformed_rows": 0,
     "older_history_present": true
   },
