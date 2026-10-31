@@ -1,0 +1,325 @@
+{
+  "generated_utc": "2026-10-31T01:36:01.953552Z",
+  "analysis_cutoff_utc": "2026-10-31T00:06:01.953552Z",
+  "methodology": {
+    "scheduled_expected": "Current GitHub cron schedule applied only after workflow creation, excluding last 90 minutes.",
+    "scheduled_observed": "Number of GitHub API runs whose event is schedule and created_at is inside the observation window.",
+    "coverage": "Observed scheduled starts / expected cron occurrences. Approximate: no run to exact missed slot matching; can exceed 100%.",
+    "run_success": "Successful completions / completed scheduled runs (excludes queued/in_progress).",
+    "recovery": "workflow_dispatch counts only, includes manual and bot-triggered; success does NOT prove data was recovered.",
+    "limitations": "Workflow schedules may be changed; applying current cron to historic days then is invalid. GitHub API does not directly establish independent market data continuity."
+  },
+  "workflows": {
+    "VPVR": {
+      "workflow_file": "daily.yml",
+      "cron_utc": "23 22 * * *",
+      "first_observable_utc": "2026-10-22T05:35:27Z",
+      "api_truncated": false,
+      "periods": {
+        "24h": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-30T00:06:01.953552Z",
+          "observable_hours": 24.0,
+          "expected_scheduled_runs": 1,
+          "observed_scheduled_runs": 1,
+          "scheduled_start_coverage_pct": 100.0,
+          "scheduled_completed_runs": 1,
+          "scheduled_successful_runs": 0,
+          "scheduled_failed_runs": 1,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 0.0,
+          "manual_or_recovery_dispatches": 0,
+          "successful_dispatches": 0,
+          "dispatches_by_bot": 0
+        },
+        "7d": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-24T00:06:01.953552Z",
+          "observable_hours": 168.0,
+          "expected_scheduled_runs": 7,
+          "observed_scheduled_runs": 7,
+          "scheduled_start_coverage_pct": 100.0,
+          "scheduled_completed_runs": 7,
+          "scheduled_successful_runs": 6,
+          "scheduled_failed_runs": 1,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 85.71,
+          "manual_or_recovery_dispatches": 0,
+          "successful_dispatches": 0,
+          "dispatches_by_bot": 0
+        },
+        "30d": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-22T05:35:27Z",
+          "observable_hours": 210.5,
+          "expected_scheduled_runs": 9,
+          "observed_scheduled_runs": 9,
+          "scheduled_start_coverage_pct": 100.0,
+          "scheduled_completed_runs": 9,
+          "scheduled_successful_runs": 7,
+          "scheduled_failed_runs": 2,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 77.78,
+          "manual_or_recovery_dispatches": 3,
+          "successful_dispatches": 2,
+          "dispatches_by_bot": 0
+        }
+      }
+    },
+    "Spot CVD": {
+      "workflow_file": "market_flow.yml",
+      "cron_utc": "7,22,37,52 * * * *",
+      "first_observable_utc": "2026-10-22T07:43:58Z",
+      "api_truncated": false,
+      "periods": {
+        "24h": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-30T00:06:01.953552Z",
+          "observable_hours": 24.0,
+          "expected_scheduled_runs": 96,
+          "observed_scheduled_runs": 29,
+          "scheduled_start_coverage_pct": 30.21,
+          "scheduled_completed_runs": 29,
+          "scheduled_successful_runs": 29,
+          "scheduled_failed_runs": 0,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 100.0,
+          "manual_or_recovery_dispatches": 78,
+          "successful_dispatches": 78,
+          "dispatches_by_bot": 0
+        },
+        "7d": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-24T00:06:01.953552Z",
+          "observable_hours": 168.0,
+          "expected_scheduled_runs": 672,
+          "observed_scheduled_runs": 239,
+          "scheduled_start_coverage_pct": 35.57,
+          "scheduled_completed_runs": 239,
+          "scheduled_successful_runs": 237,
+          "scheduled_failed_runs": 2,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 99.16,
+          "manual_or_recovery_dispatches": 285,
+          "successful_dispatches": 285,
+          "dispatches_by_bot": 46
+        },
+        "30d": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-22T07:43:58Z",
+          "observable_hours": 208.4,
+          "expected_scheduled_runs": 833,
+          "observed_scheduled_runs": 304,
+          "scheduled_start_coverage_pct": 36.49,
+          "scheduled_completed_runs": 304,
+          "scheduled_successful_runs": 302,
+          "scheduled_failed_runs": 2,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 99.34,
+          "manual_or_recovery_dispatches": 287,
+          "successful_dispatches": 287,
+          "dispatches_by_bot": 46
+        }
+      }
+    },
+    "Coinalyze futures": {
+      "workflow_file": "coinalyze.yml",
+      "cron_utc": "12,27,42,57 * * * *",
+      "first_observable_utc": "2026-10-22T08:36:56Z",
+      "api_truncated": false,
+      "periods": {
+        "24h": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-30T00:06:01.953552Z",
+          "observable_hours": 24.0,
+          "expected_scheduled_runs": 96,
+          "observed_scheduled_runs": 33,
+          "scheduled_start_coverage_pct": 34.38,
+          "scheduled_completed_runs": 33,
+          "scheduled_successful_runs": 32,
+          "scheduled_failed_runs": 1,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 96.97,
+          "manual_or_recovery_dispatches": 75,
+          "successful_dispatches": 74,
+          "dispatches_by_bot": 0
+        },
+        "7d": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-24T00:06:01.953552Z",
+          "observable_hours": 168.0,
+          "expected_scheduled_runs": 672,
+          "observed_scheduled_runs": 263,
+          "scheduled_start_coverage_pct": 39.14,
+          "scheduled_completed_runs": 263,
+          "scheduled_successful_runs": 260,
+          "scheduled_failed_runs": 3,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 98.86,
+          "manual_or_recovery_dispatches": 282,
+          "successful_dispatches": 281,
+          "dispatches_by_bot": 52
+        },
+        "30d": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-22T08:36:56Z",
+          "observable_hours": 207.5,
+          "expected_scheduled_runs": 830,
+          "observed_scheduled_runs": 334,
+          "scheduled_start_coverage_pct": 40.24,
+          "scheduled_completed_runs": 334,
+          "scheduled_successful_runs": 331,
+          "scheduled_failed_runs": 3,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 99.1,
+          "manual_or_recovery_dispatches": 285,
+          "successful_dispatches": 284,
+          "dispatches_by_bot": 52
+        }
+      }
+    },
+    "Health checks": {
+      "workflow_file": "system_health.yml",
+      "cron_utc": "3,33 * * * *",
+      "first_observable_utc": "2026-10-23T01:13:12Z",
+      "api_truncated": false,
+      "periods": {
+        "24h": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-30T00:06:01.953552Z",
+          "observable_hours": 24.0,
+          "expected_scheduled_runs": 48,
+          "observed_scheduled_runs": 24,
+          "scheduled_start_coverage_pct": 50.0,
+          "scheduled_completed_runs": 24,
+          "scheduled_successful_runs": 24,
+          "scheduled_failed_runs": 0,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 100.0,
+          "manual_or_recovery_dispatches": 0,
+          "successful_dispatches": 0,
+          "dispatches_by_bot": 0
+        },
+        "7d": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-24T00:06:01.953552Z",
+          "observable_hours": 168.0,
+          "expected_scheduled_runs": 336,
+          "observed_scheduled_runs": 208,
+          "scheduled_start_coverage_pct": 61.9,
+          "scheduled_completed_runs": 208,
+          "scheduled_successful_runs": 173,
+          "scheduled_failed_runs": 35,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 83.17,
+          "manual_or_recovery_dispatches": 0,
+          "successful_dispatches": 0,
+          "dispatches_by_bot": 0
+        },
+        "30d": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-23T01:13:12Z",
+          "observable_hours": 190.9,
+          "expected_scheduled_runs": 382,
+          "observed_scheduled_runs": 239,
+          "scheduled_start_coverage_pct": 62.57,
+          "scheduled_completed_runs": 239,
+          "scheduled_successful_runs": 204,
+          "scheduled_failed_runs": 35,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 85.36,
+          "manual_or_recovery_dispatches": 1,
+          "successful_dispatches": 1,
+          "dispatches_by_bot": 0
+        }
+      }
+    },
+    "Recovery manager": {
+      "workflow_file": "system_recovery.yml",
+      "cron_utc": "18 * * * *",
+      "first_observable_utc": "2026-10-23T01:23:19Z",
+      "api_truncated": false,
+      "periods": {
+        "24h": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-30T00:06:01.953552Z",
+          "observable_hours": 24.0,
+          "expected_scheduled_runs": 24,
+          "observed_scheduled_runs": 24,
+          "scheduled_start_coverage_pct": 100.0,
+          "scheduled_completed_runs": 24,
+          "scheduled_successful_runs": 24,
+          "scheduled_failed_runs": 0,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 100.0,
+          "manual_or_recovery_dispatches": 0,
+          "successful_dispatches": 0,
+          "dispatches_by_bot": 0
+        },
+        "7d": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-24T00:06:01.953552Z",
+          "observable_hours": 168.0,
+          "expected_scheduled_runs": 168,
+          "observed_scheduled_runs": 166,
+          "scheduled_start_coverage_pct": 98.81,
+          "scheduled_completed_runs": 166,
+          "scheduled_successful_runs": 166,
+          "scheduled_failed_runs": 0,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 100.0,
+          "manual_or_recovery_dispatches": 0,
+          "successful_dispatches": 0,
+          "dispatches_by_bot": 0
+        },
+        "30d": {
+          "status": "ok",
+          "observed_from_utc": "2026-10-23T01:23:19Z",
+          "observable_hours": 190.7,
+          "expected_scheduled_runs": 190,
+          "observed_scheduled_runs": 188,
+          "scheduled_start_coverage_pct": 98.95,
+          "scheduled_completed_runs": 188,
+          "scheduled_successful_runs": 188,
+          "scheduled_failed_runs": 0,
+          "scheduled_other_completed": 0,
+          "scheduled_success_rate_pct": 100.0,
+          "manual_or_recovery_dispatches": 1,
+          "successful_dispatches": 1,
+          "dispatches_by_bot": 0
+        }
+      }
+    }
+  },
+  "latest_data": {
+    "VPVR": {
+      "status": "fresh",
+      "updated_utc": "2026-10-29T22:59:54.662156Z",
+      "age_minutes": 1596.1,
+      "max_age_minutes": 2160
+    },
+    "VPVR_underlying_archive": {
+      "status": "fresh",
+      "updated_utc": "2026-10-28T00:00:00Z",
+      "age_minutes": 4416.0,
+      "max_age_minutes": 7200
+    },
+    "Spot": {
+      "status": "fresh",
+      "updated_utc": "2026-10-31T01:22:19.081000Z",
+      "age_minutes": 13.7,
+      "max_age_minutes": 90
+    },
+    "Derivatives": {
+      "status": "fresh",
+      "updated_utc": "2026-10-31T01:30:04Z",
+      "age_minutes": 6.0,
+      "max_age_minutes": 90
+    }
+  },
+  "alerts": [
+    "Spot CVD: recent scheduled-start coverage below 75%",
+    "Coinalyze futures: recent scheduled-start coverage below 75%",
+    "Health checks: recent scheduled-start coverage below 75%"
+  ]
+}
