@@ -1,22 +1,22 @@
 {
   "version": "v4_2_operational_observed_coverage_2026-10-29_01",
-  "audit_utc": "2026-11-01T01:55:42Z",
+  "audit_utc": "2026-11-01T02:00:28Z",
   "status": "DEGRADED_STRUCTURE_OBSERVATIONS",
-  "audit_run_id": "41263060284-1",
+  "audit_run_id": "41263364621-1",
   "trigger": {
     "event_name": "workflow_run",
-    "upstream_workflow": "BTC ETH Market Flow 15min"
+    "upstream_workflow": "BTC ETH Coinalyze Derivatives"
   },
-  "v4_monitor_generated_utc": "2026-11-01T01:55:35Z",
+  "v4_monitor_generated_utc": "2026-11-01T02:00:23Z",
   "observer_version": "v4_prospective_paper_2026-10-26_01",
-  "new_snapshots_saved": 2,
+  "new_snapshots_saved": 0,
   "new_paper_entries": 0,
   "new_forward_outcomes": 0,
   "sources": {
     "spot": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-31T00:25:42Z",
-      "observed_window_end_utc": "2026-11-01T00:25:42Z",
+      "observed_window_start_utc": "2026-10-31T00:30:28Z",
+      "observed_window_end_utc": "2026-11-01T00:30:28Z",
       "expected_slots": 96,
       "observed_scheduled_starts": 33,
       "approximate_start_coverage_pct": 34.38,
@@ -29,16 +29,16 @@
     },
     "derivatives": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-31T00:25:42Z",
-      "observed_window_end_utc": "2026-11-01T00:25:42Z",
+      "observed_window_start_utc": "2026-10-31T00:30:28Z",
+      "observed_window_end_utc": "2026-11-01T00:30:28Z",
       "expected_slots": 96,
-      "observed_scheduled_starts": 39,
-      "approximate_start_coverage_pct": 40.62,
-      "scheduled_completed": 39,
-      "scheduled_success": 39,
+      "observed_scheduled_starts": 38,
+      "approximate_start_coverage_pct": 39.58,
+      "scheduled_completed": 38,
+      "scheduled_success": 38,
       "scheduled_failure": 0,
-      "median_start_interval_min": 34.68,
-      "largest_start_interval_min": 65.83,
+      "median_start_interval_min": 34.67,
+      "largest_start_interval_min": 61.58,
       "method": "Actual event=schedule runs created in 24h ending 90m ago; excludes external workflow_dispatch and retries. NOT a data coverage rate."
     }
   },
@@ -46,29 +46,29 @@
     "BTC": {
       "status": "FRESH_AND_USABLE",
       "model_state": "NO_DOWNTURN_SETUP",
-      "spot_bar_age_minutes": 0.71,
-      "futures_bar_age_minutes": 15.71,
-      "spot_collector_age_minutes": 0.51,
-      "derivatives_collector_age_minutes": 10.56,
-      "cross_source_end_skew_minutes": 15.0,
+      "spot_bar_age_minutes": 5.48,
+      "futures_bar_age_minutes": 5.48,
+      "spot_collector_age_minutes": 5.28,
+      "derivatives_collector_age_minutes": 0.38,
+      "cross_source_end_skew_minutes": 0.0,
       "failed_checks": []
     },
     "ETH": {
       "status": "FRESH_AND_USABLE",
       "model_state": "NO_DOWNTURN_SETUP",
-      "spot_bar_age_minutes": 0.71,
-      "futures_bar_age_minutes": 15.71,
-      "spot_collector_age_minutes": 0.51,
-      "derivatives_collector_age_minutes": 10.56,
-      "cross_source_end_skew_minutes": 15.0,
+      "spot_bar_age_minutes": 5.48,
+      "futures_bar_age_minutes": 5.48,
+      "spot_collector_age_minutes": 5.28,
+      "derivatives_collector_age_minutes": 0.38,
+      "cross_source_end_skew_minutes": 0.0,
       "failed_checks": []
     }
   },
   "observed_data_coverage": {
     "version": "observation_bins_20261029_01",
     "status": "VERIFIED",
-    "window_start_utc": "2026-10-31T01:30:00Z",
-    "window_end_utc": "2026-11-01T01:30:00Z",
+    "window_start_utc": "2026-10-31T01:45:00Z",
+    "window_end_utc": "2026-11-01T01:45:00Z",
     "maturity_minutes": 15,
     "slots_expected": 96,
     "goals_pct": {
@@ -87,8 +87,8 @@
         "structure_gap_reason_bin_counts": {
           "unsynchronized_spot_futures": 3
         },
-        "last_spot_valid_bin_utc": "2026-11-01T01:15:00Z",
-        "last_structure_valid_bin_utc": "2026-11-01T01:15:00Z",
+        "last_spot_valid_bin_utc": "2026-11-01T01:30:00Z",
+        "last_structure_valid_bin_utc": "2026-11-01T01:30:00Z",
         "structure_ready_is_not_absorption_proof": true
       },
       "ETH": {
@@ -105,8 +105,8 @@
           "missing_core_features": 4,
           "unsynchronized_spot_futures": 3
         },
-        "last_spot_valid_bin_utc": "2026-11-01T01:15:00Z",
-        "last_structure_valid_bin_utc": "2026-11-01T01:15:00Z",
+        "last_spot_valid_bin_utc": "2026-11-01T01:30:00Z",
+        "last_structure_valid_bin_utc": "2026-11-01T01:30:00Z",
         "structure_ready_is_not_absorption_proof": true
       }
     },
