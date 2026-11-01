@@ -1,13 +1,13 @@
 {
   "version": "v4_2_operational_observed_coverage_2026-10-29_01",
-  "audit_utc": "2026-11-01T16:25:34Z",
+  "audit_utc": "2026-11-01T16:37:48Z",
   "status": "DEGRADED_STRUCTURE_OBSERVATIONS",
-  "audit_run_id": "41326245660-1",
+  "audit_run_id": "41327288703-1",
   "trigger": {
     "event_name": "workflow_run",
     "upstream_workflow": "BTC ETH Market Flow 15min"
   },
-  "v4_monitor_generated_utc": "2026-11-01T16:25:28Z",
+  "v4_monitor_generated_utc": "2026-11-01T16:37:42Z",
   "observer_version": "v4_prospective_paper_2026-10-26_01",
   "new_snapshots_saved": 2,
   "new_paper_entries": 0,
@@ -15,8 +15,8 @@
   "sources": {
     "spot": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-31T14:55:34Z",
-      "observed_window_end_utc": "2026-11-01T14:55:34Z",
+      "observed_window_start_utc": "2026-10-31T15:07:48Z",
+      "observed_window_end_utc": "2026-11-01T15:07:48Z",
       "expected_slots": 96,
       "observed_scheduled_starts": 33,
       "approximate_start_coverage_pct": 34.38,
@@ -29,8 +29,8 @@
     },
     "derivatives": {
       "status": "LOW_SCHEDULE_START_COVERAGE",
-      "observed_window_start_utc": "2026-10-31T14:55:34Z",
-      "observed_window_end_utc": "2026-11-01T14:55:34Z",
+      "observed_window_start_utc": "2026-10-31T15:07:48Z",
+      "observed_window_end_utc": "2026-11-01T15:07:48Z",
       "expected_slots": 96,
       "observed_scheduled_starts": 37,
       "approximate_start_coverage_pct": 38.54,
@@ -46,29 +46,29 @@
     "BTC": {
       "status": "FRESH_AND_USABLE",
       "model_state": "NO_DOWNTURN_SETUP",
-      "spot_bar_age_minutes": 0.57,
-      "futures_bar_age_minutes": 5.57,
-      "spot_collector_age_minutes": 0.39,
-      "derivatives_collector_age_minutes": 3.06,
-      "cross_source_end_skew_minutes": 5.0,
+      "spot_bar_age_minutes": 2.8,
+      "futures_bar_age_minutes": 17.8,
+      "spot_collector_age_minutes": 0.48,
+      "derivatives_collector_age_minutes": 15.29,
+      "cross_source_end_skew_minutes": 15.0,
       "failed_checks": []
     },
     "ETH": {
       "status": "FRESH_AND_USABLE",
       "model_state": "NO_DOWNTURN_SETUP",
-      "spot_bar_age_minutes": 0.57,
-      "futures_bar_age_minutes": 5.57,
-      "spot_collector_age_minutes": 0.39,
-      "derivatives_collector_age_minutes": 3.06,
-      "cross_source_end_skew_minutes": 5.0,
+      "spot_bar_age_minutes": 2.8,
+      "futures_bar_age_minutes": 17.8,
+      "spot_collector_age_minutes": 0.48,
+      "derivatives_collector_age_minutes": 15.29,
+      "cross_source_end_skew_minutes": 15.0,
       "failed_checks": []
     }
   },
   "observed_data_coverage": {
     "version": "observation_bins_20261029_01",
     "status": "VERIFIED",
-    "window_start_utc": "2026-10-31T16:00:00Z",
-    "window_end_utc": "2026-11-01T16:00:00Z",
+    "window_start_utc": "2026-10-31T16:15:00Z",
+    "window_end_utc": "2026-11-01T16:15:00Z",
     "maturity_minutes": 15,
     "slots_expected": 96,
     "goals_pct": {
@@ -79,33 +79,33 @@
       "BTC": {
         "observed_bins": 93,
         "spot_valid_bins": 93,
-        "structure_valid_bins": 89,
+        "structure_valid_bins": 88,
         "spot_coverage_pct": 96.88,
-        "structure_coverage_pct": 92.71,
+        "structure_coverage_pct": 91.67,
         "missing_spot_bins": 3,
-        "missing_structure_bins": 7,
+        "missing_structure_bins": 8,
         "structure_gap_reason_bin_counts": {
-          "unsynchronized_spot_futures": 4
+          "unsynchronized_spot_futures": 5
         },
-        "last_spot_valid_bin_utc": "2026-11-01T15:45:00Z",
+        "last_spot_valid_bin_utc": "2026-11-01T16:00:00Z",
         "last_structure_valid_bin_utc": "2026-11-01T15:45:00Z",
         "structure_ready_is_not_absorption_proof": true
       },
       "ETH": {
         "observed_bins": 93,
         "spot_valid_bins": 93,
-        "structure_valid_bins": 85,
+        "structure_valid_bins": 84,
         "spot_coverage_pct": 96.88,
-        "structure_coverage_pct": 88.54,
+        "structure_coverage_pct": 87.5,
         "missing_spot_bins": 3,
-        "missing_structure_bins": 11,
+        "missing_structure_bins": 12,
         "structure_gap_reason_bin_counts": {
           "invalid_liquidations_1h": 4,
           "liquidations_not_verified": 4,
           "missing_core_features": 4,
-          "unsynchronized_spot_futures": 4
+          "unsynchronized_spot_futures": 5
         },
-        "last_spot_valid_bin_utc": "2026-11-01T15:45:00Z",
+        "last_spot_valid_bin_utc": "2026-11-01T16:00:00Z",
         "last_structure_valid_bin_utc": "2026-11-01T15:45:00Z",
         "structure_ready_is_not_absorption_proof": true
       }
