@@ -1,5 +1,5 @@
 {
-  "collected_utc": "2026-11-02T13:40:12.860000Z",
+  "collected_utc": "2026-11-02T13:44:18.998000Z",
   "source": "Binance public spot market-data and USD-M futures REST endpoints",
   "market_scope": "Binance BTCUSDT ETHUSDT spot plus Binance USD-M futures where allowed; Bybit linear perp separately labeled",
   "cadence": "approx 15min GitHub Actions scheduler; not real-time or continuous surveillance",
@@ -394,21 +394,21 @@
           ]
         },
         "depth": {
-          "observed_utc": "2026-11-02T13:40:12.860000Z",
+          "observed_utc": "2026-11-02T13:44:18.998000Z",
           "exchange_event_time_utc": null,
-          "mid_usdt": 78082.905,
-          "best_bid": 78082.9,
-          "best_ask": 78082.91,
+          "mid_usdt": 78178.215,
+          "best_bid": 78178.21,
+          "best_ask": 78178.22,
           "spread_bps": 0.0013,
           "levels_returned_bids": 1000,
           "levels_returned_asks": 1000,
           "depth_bands": {
             "plus_minus_0.1pct": {
-              "bid_notional_usdt": 4582200.05,
-              "ask_notional_usdt": 8472023.47,
+              "bid_notional_usdt": 5350434.74,
+              "ask_notional_usdt": 9557333.3,
               "coverage_complete_bid": true,
               "coverage_complete_ask": true,
-              "bid_ask_ratio": 0.5409
+              "bid_ask_ratio": 0.5598
             },
             "plus_minus_0.5pct": {
               "bid_notional_usdt": null,
@@ -429,32 +429,473 @@
       },
       "futures": {
         "flow": {
-          "status": "unavailable",
-          "reason": "/fapi/v1/klines: HTTPError HTTP 451; endpoint unavailable (not substituted)"
+          "last_closed_bar_utc": "2026-11-02T13:40:00Z",
+          "latest_close_usdt": 78073.0,
+          "windows": {
+            "1h": {
+              "status": "ok",
+              "taker_buy_quote_usdt": 414573959.21,
+              "taker_sell_quote_usdt": 353091756.95,
+              "cvd_delta_quote_usdt": 61482202.26,
+              "taker_buy_base": 5326.889,
+              "taker_sell_base": 4539.693,
+              "cvd_delta_base": 787.196,
+              "buy_share_quote_pct": 54.004,
+              "price_change_pct": 0.4103,
+              "n_bars": 12,
+              "start_utc": "2026-11-02T12:40:00Z",
+              "end_utc": "2026-11-02T13:40:00Z"
+            },
+            "4h": {
+              "status": "ok",
+              "taker_buy_quote_usdt": 722632894.7,
+              "taker_sell_quote_usdt": 667201923.63,
+              "cvd_delta_quote_usdt": 55430971.07,
+              "taker_buy_base": 9279.807,
+              "taker_sell_base": 8571.111,
+              "cvd_delta_base": 708.696,
+              "buy_share_quote_pct": 51.994,
+              "price_change_pct": -0.0064,
+              "n_bars": 48,
+              "start_utc": "2026-11-02T09:40:00Z",
+              "end_utc": "2026-11-02T13:40:00Z"
+            },
+            "24h": {
+              "status": "ok",
+              "taker_buy_quote_usdt": 3130743012.71,
+              "taker_sell_quote_usdt": 2919082201.04,
+              "cvd_delta_quote_usdt": 211660811.66,
+              "taker_buy_base": 40070.407,
+              "taker_sell_base": 37377.33,
+              "cvd_delta_base": 2693.077,
+              "buy_share_quote_pct": 51.749,
+              "price_change_pct": 0.2142,
+              "n_bars": 288,
+              "start_utc": "2026-11-01T13:40:00Z",
+              "end_utc": "2026-11-02T13:40:00Z"
+            }
+          },
+          "last_5m_bars": [
+            {
+              "start_utc": "2026-11-02T09:40:00Z",
+              "close": 78062.4,
+              "taker_buy_quote_usdt": 4458771.04,
+              "taker_sell_quote_usdt": 2846340.81,
+              "cvd_delta_quote_usdt": 1612430.24
+            },
+            {
+              "start_utc": "2026-11-02T09:45:00Z",
+              "close": 78140.2,
+              "taker_buy_quote_usdt": 7510517.85,
+              "taker_sell_quote_usdt": 3746994.48,
+              "cvd_delta_quote_usdt": 3763523.37
+            },
+            {
+              "start_utc": "2026-11-02T09:50:00Z",
+              "close": 78104.6,
+              "taker_buy_quote_usdt": 7578924.9,
+              "taker_sell_quote_usdt": 5033653.11,
+              "cvd_delta_quote_usdt": 2545271.79
+            },
+            {
+              "start_utc": "2026-11-02T09:55:00Z",
+              "close": 78041.9,
+              "taker_buy_quote_usdt": 7130093.5,
+              "taker_sell_quote_usdt": 5198677.92,
+              "cvd_delta_quote_usdt": 1931415.58
+            },
+            {
+              "start_utc": "2026-11-02T10:00:00Z",
+              "close": 77977.2,
+              "taker_buy_quote_usdt": 9817050.3,
+              "taker_sell_quote_usdt": 18097863.36,
+              "cvd_delta_quote_usdt": -8280813.06
+            },
+            {
+              "start_utc": "2026-11-02T10:05:00Z",
+              "close": 77985.8,
+              "taker_buy_quote_usdt": 7290136.95,
+              "taker_sell_quote_usdt": 12059820.87,
+              "cvd_delta_quote_usdt": -4769683.92
+            },
+            {
+              "start_utc": "2026-11-02T10:10:00Z",
+              "close": 77962.2,
+              "taker_buy_quote_usdt": 11379162.17,
+              "taker_sell_quote_usdt": 7715160.59,
+              "cvd_delta_quote_usdt": 3664001.58
+            },
+            {
+              "start_utc": "2026-11-02T10:15:00Z",
+              "close": 77988.9,
+              "taker_buy_quote_usdt": 7294318.85,
+              "taker_sell_quote_usdt": 4178870.04,
+              "cvd_delta_quote_usdt": 3115448.81
+            },
+            {
+              "start_utc": "2026-11-02T10:20:00Z",
+              "close": 77960.5,
+              "taker_buy_quote_usdt": 3826834.07,
+              "taker_sell_quote_usdt": 2839596.69,
+              "cvd_delta_quote_usdt": 987237.37
+            },
+            {
+              "start_utc": "2026-11-02T10:25:00Z",
+              "close": 77952.6,
+              "taker_buy_quote_usdt": 9146254.13,
+              "taker_sell_quote_usdt": 3163852.46,
+              "cvd_delta_quote_usdt": 5982401.68
+            },
+            {
+              "start_utc": "2026-11-02T10:30:00Z",
+              "close": 78014.9,
+              "taker_buy_quote_usdt": 8595610.74,
+              "taker_sell_quote_usdt": 1978426.33,
+              "cvd_delta_quote_usdt": 6617184.41
+            },
+            {
+              "start_utc": "2026-11-02T10:35:00Z",
+              "close": 77975.0,
+              "taker_buy_quote_usdt": 4761771.35,
+              "taker_sell_quote_usdt": 4303335.94,
+              "cvd_delta_quote_usdt": 458435.42
+            },
+            {
+              "start_utc": "2026-11-02T10:40:00Z",
+              "close": 77960.4,
+              "taker_buy_quote_usdt": 4195358.66,
+              "taker_sell_quote_usdt": 4077320.5,
+              "cvd_delta_quote_usdt": 118038.16
+            },
+            {
+              "start_utc": "2026-11-02T10:45:00Z",
+              "close": 78009.2,
+              "taker_buy_quote_usdt": 6693048.46,
+              "taker_sell_quote_usdt": 5098118.51,
+              "cvd_delta_quote_usdt": 1594929.95
+            },
+            {
+              "start_utc": "2026-11-02T10:50:00Z",
+              "close": 77960.1,
+              "taker_buy_quote_usdt": 3032431.27,
+              "taker_sell_quote_usdt": 4728778.53,
+              "cvd_delta_quote_usdt": -1696347.26
+            },
+            {
+              "start_utc": "2026-11-02T10:55:00Z",
+              "close": 77945.3,
+              "taker_buy_quote_usdt": 2239205.04,
+              "taker_sell_quote_usdt": 5968109.15,
+              "cvd_delta_quote_usdt": -3728904.11
+            },
+            {
+              "start_utc": "2026-11-02T11:00:00Z",
+              "close": 77924.4,
+              "taker_buy_quote_usdt": 4823254.29,
+              "taker_sell_quote_usdt": 4620517.02,
+              "cvd_delta_quote_usdt": 202737.26
+            },
+            {
+              "start_utc": "2026-11-02T11:05:00Z",
+              "close": 77920.1,
+              "taker_buy_quote_usdt": 3573826.25,
+              "taker_sell_quote_usdt": 5231907.78,
+              "cvd_delta_quote_usdt": -1658081.53
+            },
+            {
+              "start_utc": "2026-11-02T11:10:00Z",
+              "close": 77929.8,
+              "taker_buy_quote_usdt": 7290037.93,
+              "taker_sell_quote_usdt": 13820137.38,
+              "cvd_delta_quote_usdt": -6530099.45
+            },
+            {
+              "start_utc": "2026-11-02T11:15:00Z",
+              "close": 77846.0,
+              "taker_buy_quote_usdt": 7598188.57,
+              "taker_sell_quote_usdt": 24909891.61,
+              "cvd_delta_quote_usdt": -17311703.03
+            },
+            {
+              "start_utc": "2026-11-02T11:20:00Z",
+              "close": 77876.3,
+              "taker_buy_quote_usdt": 7059907.75,
+              "taker_sell_quote_usdt": 4226193.3,
+              "cvd_delta_quote_usdt": 2833714.45
+            },
+            {
+              "start_utc": "2026-11-02T11:25:00Z",
+              "close": 77824.9,
+              "taker_buy_quote_usdt": 3454733.66,
+              "taker_sell_quote_usdt": 11052945.33,
+              "cvd_delta_quote_usdt": -7598211.68
+            },
+            {
+              "start_utc": "2026-11-02T11:30:00Z",
+              "close": 77832.7,
+              "taker_buy_quote_usdt": 9130460.9,
+              "taker_sell_quote_usdt": 23891567.14,
+              "cvd_delta_quote_usdt": -14761106.24
+            },
+            {
+              "start_utc": "2026-11-02T11:35:00Z",
+              "close": 77927.8,
+              "taker_buy_quote_usdt": 26458314.4,
+              "taker_sell_quote_usdt": 4542291.29,
+              "cvd_delta_quote_usdt": 21916023.11
+            },
+            {
+              "start_utc": "2026-11-02T11:40:00Z",
+              "close": 77850.0,
+              "taker_buy_quote_usdt": 6194259.23,
+              "taker_sell_quote_usdt": 9993802.88,
+              "cvd_delta_quote_usdt": -3799543.65
+            },
+            {
+              "start_utc": "2026-11-02T11:45:00Z",
+              "close": 77792.5,
+              "taker_buy_quote_usdt": 14828175.46,
+              "taker_sell_quote_usdt": 15309626.69,
+              "cvd_delta_quote_usdt": -481451.23
+            },
+            {
+              "start_utc": "2026-11-02T11:50:00Z",
+              "close": 77840.2,
+              "taker_buy_quote_usdt": 13459747.01,
+              "taker_sell_quote_usdt": 7103619.3,
+              "cvd_delta_quote_usdt": 6356127.71
+            },
+            {
+              "start_utc": "2026-11-02T11:55:00Z",
+              "close": 77865.9,
+              "taker_buy_quote_usdt": 5299621.74,
+              "taker_sell_quote_usdt": 4858107.05,
+              "cvd_delta_quote_usdt": 441514.69
+            },
+            {
+              "start_utc": "2026-11-02T12:00:00Z",
+              "close": 77850.1,
+              "taker_buy_quote_usdt": 4965761.81,
+              "taker_sell_quote_usdt": 4976482.15,
+              "cvd_delta_quote_usdt": -10720.34
+            },
+            {
+              "start_utc": "2026-11-02T12:05:00Z",
+              "close": 77973.7,
+              "taker_buy_quote_usdt": 30862447.57,
+              "taker_sell_quote_usdt": 15891485.96,
+              "cvd_delta_quote_usdt": 14970961.61
+            },
+            {
+              "start_utc": "2026-11-02T12:10:00Z",
+              "close": 78014.7,
+              "taker_buy_quote_usdt": 12069280.68,
+              "taker_sell_quote_usdt": 6822314.54,
+              "cvd_delta_quote_usdt": 5246966.14
+            },
+            {
+              "start_utc": "2026-11-02T12:15:00Z",
+              "close": 78011.8,
+              "taker_buy_quote_usdt": 15681859.78,
+              "taker_sell_quote_usdt": 16145774.78,
+              "cvd_delta_quote_usdt": -463914.99
+            },
+            {
+              "start_utc": "2026-11-02T12:20:00Z",
+              "close": 78014.2,
+              "taker_buy_quote_usdt": 5694514.38,
+              "taker_sell_quote_usdt": 7935950.51,
+              "cvd_delta_quote_usdt": -2241436.13
+            },
+            {
+              "start_utc": "2026-11-02T12:25:00Z",
+              "close": 77964.3,
+              "taker_buy_quote_usdt": 3068875.46,
+              "taker_sell_quote_usdt": 5102949.03,
+              "cvd_delta_quote_usdt": -2034073.57
+            },
+            {
+              "start_utc": "2026-11-02T12:30:00Z",
+              "close": 77853.0,
+              "taker_buy_quote_usdt": 5756911.02,
+              "taker_sell_quote_usdt": 10992369.24,
+              "cvd_delta_quote_usdt": -5235458.22
+            },
+            {
+              "start_utc": "2026-11-02T12:35:00Z",
+              "close": 77754.1,
+              "taker_buy_quote_usdt": 15839268.32,
+              "taker_sell_quote_usdt": 25647314.41,
+              "cvd_delta_quote_usdt": -9808046.1
+            },
+            {
+              "start_utc": "2026-11-02T12:40:00Z",
+              "close": 77847.9,
+              "taker_buy_quote_usdt": 45957091.24,
+              "taker_sell_quote_usdt": 51563783.28,
+              "cvd_delta_quote_usdt": -5606692.04
+            },
+            {
+              "start_utc": "2026-11-02T12:45:00Z",
+              "close": 77825.4,
+              "taker_buy_quote_usdt": 12787528.6,
+              "taker_sell_quote_usdt": 10367364.29,
+              "cvd_delta_quote_usdt": 2420164.3
+            },
+            {
+              "start_utc": "2026-11-02T12:50:00Z",
+              "close": 77741.1,
+              "taker_buy_quote_usdt": 21199734.01,
+              "taker_sell_quote_usdt": 21756419.92,
+              "cvd_delta_quote_usdt": -556685.91
+            },
+            {
+              "start_utc": "2026-11-02T12:55:00Z",
+              "close": 77779.3,
+              "taker_buy_quote_usdt": 39636419.89,
+              "taker_sell_quote_usdt": 23132336.66,
+              "cvd_delta_quote_usdt": 16504083.23
+            },
+            {
+              "start_utc": "2026-11-02T13:00:00Z",
+              "close": 77727.2,
+              "taker_buy_quote_usdt": 14661628.83,
+              "taker_sell_quote_usdt": 20301325.23,
+              "cvd_delta_quote_usdt": -5639696.4
+            },
+            {
+              "start_utc": "2026-11-02T13:05:00Z",
+              "close": 77664.9,
+              "taker_buy_quote_usdt": 13632618.24,
+              "taker_sell_quote_usdt": 38181140.99,
+              "cvd_delta_quote_usdt": -24548522.75
+            },
+            {
+              "start_utc": "2026-11-02T13:10:00Z",
+              "close": 77719.4,
+              "taker_buy_quote_usdt": 26667364.28,
+              "taker_sell_quote_usdt": 19761857.3,
+              "cvd_delta_quote_usdt": 6905506.98
+            },
+            {
+              "start_utc": "2026-11-02T13:15:00Z",
+              "close": 77601.6,
+              "taker_buy_quote_usdt": 30231336.03,
+              "taker_sell_quote_usdt": 42920634.73,
+              "cvd_delta_quote_usdt": -12689298.7
+            },
+            {
+              "start_utc": "2026-11-02T13:20:00Z",
+              "close": 77633.9,
+              "taker_buy_quote_usdt": 20061270.19,
+              "taker_sell_quote_usdt": 12810038.62,
+              "cvd_delta_quote_usdt": 7251231.58
+            },
+            {
+              "start_utc": "2026-11-02T13:25:00Z",
+              "close": 77679.1,
+              "taker_buy_quote_usdt": 12352235.91,
+              "taker_sell_quote_usdt": 7500197.1,
+              "cvd_delta_quote_usdt": 4852038.82
+            },
+            {
+              "start_utc": "2026-11-02T13:30:00Z",
+              "close": 77617.1,
+              "taker_buy_quote_usdt": 13092423.48,
+              "taker_sell_quote_usdt": 21484019.17,
+              "cvd_delta_quote_usdt": -8391595.69
+            },
+            {
+              "start_utc": "2026-11-02T13:35:00Z",
+              "close": 78073.0,
+              "taker_buy_quote_usdt": 164294308.5,
+              "taker_sell_quote_usdt": 83312639.67,
+              "cvd_delta_quote_usdt": 80981668.84
+            }
+          ]
         },
         "depth": {
-          "status": "unavailable",
-          "reason": "/fapi/v1/depth: HTTPError HTTP 451; endpoint unavailable (not substituted)"
+          "observed_utc": "2026-11-02T13:44:18.998000Z",
+          "exchange_event_time_utc": "2026-11-02T13:44:21.521000Z",
+          "mid_usdt": 78143.45,
+          "best_bid": 78143.4,
+          "best_ask": 78143.5,
+          "spread_bps": 0.0128,
+          "levels_returned_bids": 1000,
+          "levels_returned_asks": 1000,
+          "depth_bands": {
+            "plus_minus_0.1pct": {
+              "bid_notional_usdt": 23991554.64,
+              "ask_notional_usdt": 20580968.83,
+              "coverage_complete_bid": true,
+              "coverage_complete_ask": true,
+              "bid_ask_ratio": 1.1657
+            },
+            "plus_minus_0.5pct": {
+              "bid_notional_usdt": null,
+              "ask_notional_usdt": null,
+              "coverage_complete_bid": false,
+              "coverage_complete_ask": false,
+              "bid_ask_ratio": null
+            },
+            "plus_minus_1pct": {
+              "bid_notional_usdt": null,
+              "ask_notional_usdt": null,
+              "coverage_complete_bid": false,
+              "coverage_complete_ask": false,
+              "bid_ask_ratio": null
+            }
+          }
         },
         "open_interest": {
-          "status": "unavailable",
-          "reason": "/fapi/v1/openInterest: HTTPError HTTP 451; endpoint unavailable (not substituted)"
+          "status": "ok",
+          "current_contract_units": 96202.621,
+          "current_time_utc": "2026-11-02T13:44:14.396000Z",
+          "changes": {
+            "1h": {
+              "status": "ok",
+              "open_interest_contract_units_change": 581.812,
+              "open_interest_contract_units_pct": 0.6087,
+              "notional_change_usdt": 37044726.14,
+              "notional_change_pct": 0.4977
+            },
+            "4h": {
+              "status": "ok",
+              "open_interest_contract_units_change": 814.493,
+              "open_interest_contract_units_pct": 0.8542,
+              "notional_change_usdt": 22595674.83,
+              "notional_change_pct": 0.303
+            },
+            "24h": {
+              "status": "ok",
+              "open_interest_contract_units_change": -899.401,
+              "open_interest_contract_units_pct": -0.9266,
+              "notional_change_usdt": -77355893.07,
+              "notional_change_pct": -1.0236
+            }
+          },
+          "latest_history_utc": "2026-11-02T13:00:00Z",
+          "latest_history_contract_units": 96163.73,
+          "latest_history_notional_usdt": 7479626353.13
         },
         "funding": {
-          "status": "unavailable",
-          "reason": "/fapi/v1/premiumIndex: HTTPError HTTP 451; endpoint unavailable (not substituted)"
+          "last_funding_rate": 0.0001,
+          "next_funding_time_utc": "2026-11-02T16:00:00Z",
+          "mark_price": 78148.37686232,
+          "index_price": 78177.06152174,
+          "funding_basis_bps": -3.6692
         }
       },
       "quality": {
         "spot_flow": "ok",
         "spot_depth": "ok",
-        "futures_flow": "unavailable",
-        "futures_depth": "unavailable",
-        "futures_oi": "unavailable",
-        "futures_funding": "unavailable",
-        "bybit_linear_ticker": "unavailable",
-        "bybit_linear_open_interest_history": "unavailable",
-        "bybit_linear_depth": "unavailable"
+        "futures_flow": "ok",
+        "futures_depth": "ok",
+        "futures_oi": "ok",
+        "futures_funding": "ok",
+        "bybit_linear_ticker": "ok",
+        "bybit_linear_open_interest_history": "ok",
+        "bybit_linear_depth": "ok"
       },
       "limitations": [
         "Kline taker-buy vs remainder is a 5m aggregated trade-direction proxy; no trade-level reconstruction.",
@@ -467,25 +908,84 @@
         "instrument": "BTCUSDT",
         "product": "USDT linear perpetual",
         "quality": {
-          "ticker": "unavailable",
-          "open_interest_history": "unavailable",
-          "depth": "unavailable"
+          "ticker": "ok",
+          "open_interest_history": "ok",
+          "depth": "ok"
         },
         "limitations": [
           "Not Binance futures. Never combine venue-specific OI or book depth.",
           "Recent public trades are a limited sample, not complete 1h/4h/24h derivatives CVD."
         ],
         "ticker": {
-          "status": "unavailable",
-          "reason": "/v5/market/tickers: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+          "observed_utc": "2026-11-02T13:44:18.998000Z",
+          "last_price_usdt": 78134.8,
+          "mark_price_usdt": 78136.83,
+          "index_price_usdt": 78168.39,
+          "open_interest_coin_units": 68570.956,
+          "open_interest_notional_usdt": 5357917131.91,
+          "funding_rate": 9.836e-05,
+          "next_funding_utc": "2026-11-02T16:00:00Z",
+          "basis_mark_vs_index_bps": -4.0374
         },
         "open_interest_history": {
-          "status": "unavailable",
-          "reason": "/v5/market/open-interest: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+          "last_history_utc": "2026-11-02T13:00:00Z",
+          "last_history_coin_units": 68255.162,
+          "changes": {
+            "1h": {
+              "status": "ok",
+              "coin_units_change": 127.762,
+              "coin_units_pct_change": 0.1875,
+              "start_utc": "2026-11-02T12:00:00Z",
+              "end_utc": "2026-11-02T13:00:00Z"
+            },
+            "4h": {
+              "status": "ok",
+              "coin_units_change": 25.629,
+              "coin_units_pct_change": 0.0376,
+              "start_utc": "2026-11-02T09:00:00Z",
+              "end_utc": "2026-11-02T13:00:00Z"
+            },
+            "24h": {
+              "status": "ok",
+              "coin_units_change": -381.218,
+              "coin_units_pct_change": -0.5554,
+              "start_utc": "2026-11-01T13:00:00Z",
+              "end_utc": "2026-11-02T13:00:00Z"
+            }
+          }
         },
         "depth": {
-          "status": "unavailable",
-          "reason": "/v5/market/orderbook: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+          "observed_utc": "2026-11-02T13:44:18.998000Z",
+          "exchange_event_time_utc": "2026-11-02T13:44:23.558000Z",
+          "mid_usdt": 78134.75,
+          "best_bid": 78134.7,
+          "best_ask": 78134.8,
+          "spread_bps": 0.0128,
+          "levels_returned_bids": 1000,
+          "levels_returned_asks": 1000,
+          "depth_bands": {
+            "plus_minus_0.1pct": {
+              "bid_notional_usdt": 24641713.85,
+              "ask_notional_usdt": 26327085.83,
+              "coverage_complete_bid": true,
+              "coverage_complete_ask": true,
+              "bid_ask_ratio": 0.936
+            },
+            "plus_minus_0.5pct": {
+              "bid_notional_usdt": null,
+              "ask_notional_usdt": null,
+              "coverage_complete_bid": false,
+              "coverage_complete_ask": false,
+              "bid_ask_ratio": null
+            },
+            "plus_minus_1pct": {
+              "bid_notional_usdt": null,
+              "ask_notional_usdt": null,
+              "coverage_complete_bid": false,
+              "coverage_complete_ask": false,
+              "bid_ask_ratio": null
+            }
+          }
         },
         "cvd_1h_4h_24h": {
           "status": "unavailable",
@@ -883,31 +1383,31 @@
           ]
         },
         "depth": {
-          "observed_utc": "2026-11-02T13:40:12.860000Z",
+          "observed_utc": "2026-11-02T13:44:18.998000Z",
           "exchange_event_time_utc": null,
-          "mid_usdt": 2298.525,
-          "best_bid": 2298.52,
-          "best_ask": 2298.53,
+          "mid_usdt": 2298.085,
+          "best_bid": 2298.08,
+          "best_ask": 2298.09,
           "spread_bps": 0.0435,
           "levels_returned_bids": 1000,
           "levels_returned_asks": 1000,
           "depth_bands": {
             "plus_minus_0.1pct": {
-              "bid_notional_usdt": 1928721.27,
-              "ask_notional_usdt": 2461742.06,
+              "bid_notional_usdt": 2249627.82,
+              "ask_notional_usdt": 1799292.65,
               "coverage_complete_bid": true,
               "coverage_complete_ask": true,
-              "bid_ask_ratio": 0.7835
+              "bid_ask_ratio": 1.2503
             },
             "plus_minus_0.5pct": {
-              "bid_notional_usdt": 5722793.13,
-              "ask_notional_usdt": 6373939.2,
+              "bid_notional_usdt": 6284544.22,
+              "ask_notional_usdt": 5604277.91,
               "coverage_complete_bid": true,
               "coverage_complete_ask": true,
-              "bid_ask_ratio": 0.8978
+              "bid_ask_ratio": 1.1214
             },
             "plus_minus_1pct": {
-              "bid_notional_usdt": 7159121.18,
+              "bid_notional_usdt": 7784643.41,
               "ask_notional_usdt": null,
               "coverage_complete_bid": true,
               "coverage_complete_ask": false,
@@ -918,32 +1418,473 @@
       },
       "futures": {
         "flow": {
-          "status": "unavailable",
-          "reason": "/fapi/v1/klines: HTTPError HTTP 451; endpoint unavailable (not substituted)"
+          "last_closed_bar_utc": "2026-11-02T13:40:00Z",
+          "latest_close_usdt": 2298.36,
+          "windows": {
+            "1h": {
+              "status": "ok",
+              "taker_buy_quote_usdt": 250939542.56,
+              "taker_sell_quote_usdt": 213225746.43,
+              "cvd_delta_quote_usdt": 37713796.13,
+              "taker_buy_base": 109684.164,
+              "taker_sell_base": 93261.573,
+              "cvd_delta_base": 16422.591,
+              "buy_share_quote_pct": 54.063,
+              "price_change_pct": 0.6371,
+              "n_bars": 12,
+              "start_utc": "2026-11-02T12:40:00Z",
+              "end_utc": "2026-11-02T13:40:00Z"
+            },
+            "4h": {
+              "status": "ok",
+              "taker_buy_quote_usdt": 568829983.56,
+              "taker_sell_quote_usdt": 475294560.22,
+              "cvd_delta_quote_usdt": 93535423.34,
+              "taker_buy_base": 248597.312,
+              "taker_sell_base": 207802.322,
+              "cvd_delta_base": 40794.99,
+              "buy_share_quote_pct": 54.479,
+              "price_change_pct": 0.3274,
+              "n_bars": 48,
+              "start_utc": "2026-11-02T09:40:00Z",
+              "end_utc": "2026-11-02T13:40:00Z"
+            },
+            "24h": {
+              "status": "ok",
+              "taker_buy_quote_usdt": 2622607612.45,
+              "taker_sell_quote_usdt": 2495378328.78,
+              "cvd_delta_quote_usdt": 127229283.67,
+              "taker_buy_base": 1147523.834,
+              "taker_sell_base": 1092319.072,
+              "cvd_delta_base": 55204.762,
+              "buy_share_quote_pct": 51.243,
+              "price_change_pct": 1.4921,
+              "n_bars": 288,
+              "start_utc": "2026-11-01T13:40:00Z",
+              "end_utc": "2026-11-02T13:40:00Z"
+            }
+          },
+          "last_5m_bars": [
+            {
+              "start_utc": "2026-11-02T09:40:00Z",
+              "close": 2290.1,
+              "taker_buy_quote_usdt": 6071288.16,
+              "taker_sell_quote_usdt": 7528757.05,
+              "cvd_delta_quote_usdt": -1457468.89
+            },
+            {
+              "start_utc": "2026-11-02T09:45:00Z",
+              "close": 2292.86,
+              "taker_buy_quote_usdt": 19549584.32,
+              "taker_sell_quote_usdt": 9020315.79,
+              "cvd_delta_quote_usdt": 10529268.53
+            },
+            {
+              "start_utc": "2026-11-02T09:50:00Z",
+              "close": 2291.56,
+              "taker_buy_quote_usdt": 7485404.25,
+              "taker_sell_quote_usdt": 10460939.07,
+              "cvd_delta_quote_usdt": -2975534.82
+            },
+            {
+              "start_utc": "2026-11-02T09:55:00Z",
+              "close": 2290.02,
+              "taker_buy_quote_usdt": 5424285.88,
+              "taker_sell_quote_usdt": 4638044.44,
+              "cvd_delta_quote_usdt": 786241.44
+            },
+            {
+              "start_utc": "2026-11-02T10:00:00Z",
+              "close": 2286.71,
+              "taker_buy_quote_usdt": 11322335.76,
+              "taker_sell_quote_usdt": 13034385.23,
+              "cvd_delta_quote_usdt": -1712049.48
+            },
+            {
+              "start_utc": "2026-11-02T10:05:00Z",
+              "close": 2287.51,
+              "taker_buy_quote_usdt": 16303265.06,
+              "taker_sell_quote_usdt": 24875498.56,
+              "cvd_delta_quote_usdt": -8572233.5
+            },
+            {
+              "start_utc": "2026-11-02T10:10:00Z",
+              "close": 2286.31,
+              "taker_buy_quote_usdt": 6873732.25,
+              "taker_sell_quote_usdt": 5669400.17,
+              "cvd_delta_quote_usdt": 1204332.08
+            },
+            {
+              "start_utc": "2026-11-02T10:15:00Z",
+              "close": 2287.26,
+              "taker_buy_quote_usdt": 6011482.91,
+              "taker_sell_quote_usdt": 2683634.3,
+              "cvd_delta_quote_usdt": 3327848.62
+            },
+            {
+              "start_utc": "2026-11-02T10:20:00Z",
+              "close": 2286.88,
+              "taker_buy_quote_usdt": 25068668.37,
+              "taker_sell_quote_usdt": 7861895.42,
+              "cvd_delta_quote_usdt": 17206772.95
+            },
+            {
+              "start_utc": "2026-11-02T10:25:00Z",
+              "close": 2286.46,
+              "taker_buy_quote_usdt": 5429756.03,
+              "taker_sell_quote_usdt": 4334165.26,
+              "cvd_delta_quote_usdt": 1095590.77
+            },
+            {
+              "start_utc": "2026-11-02T10:30:00Z",
+              "close": 2288.5,
+              "taker_buy_quote_usdt": 10966614.79,
+              "taker_sell_quote_usdt": 4411379.17,
+              "cvd_delta_quote_usdt": 6555235.63
+            },
+            {
+              "start_utc": "2026-11-02T10:35:00Z",
+              "close": 2286.28,
+              "taker_buy_quote_usdt": 4728932.73,
+              "taker_sell_quote_usdt": 7330290.22,
+              "cvd_delta_quote_usdt": -2601357.49
+            },
+            {
+              "start_utc": "2026-11-02T10:40:00Z",
+              "close": 2284.94,
+              "taker_buy_quote_usdt": 5321016.53,
+              "taker_sell_quote_usdt": 5852227.61,
+              "cvd_delta_quote_usdt": -531211.08
+            },
+            {
+              "start_utc": "2026-11-02T10:45:00Z",
+              "close": 2287.46,
+              "taker_buy_quote_usdt": 7592013.46,
+              "taker_sell_quote_usdt": 4536336.6,
+              "cvd_delta_quote_usdt": 3055676.85
+            },
+            {
+              "start_utc": "2026-11-02T10:50:00Z",
+              "close": 2286.04,
+              "taker_buy_quote_usdt": 5678694.98,
+              "taker_sell_quote_usdt": 3196068.66,
+              "cvd_delta_quote_usdt": 2482626.31
+            },
+            {
+              "start_utc": "2026-11-02T10:55:00Z",
+              "close": 2285.72,
+              "taker_buy_quote_usdt": 3970995.35,
+              "taker_sell_quote_usdt": 5405704.19,
+              "cvd_delta_quote_usdt": -1434708.84
+            },
+            {
+              "start_utc": "2026-11-02T11:00:00Z",
+              "close": 2285.36,
+              "taker_buy_quote_usdt": 5035120.22,
+              "taker_sell_quote_usdt": 4632039.51,
+              "cvd_delta_quote_usdt": 403080.71
+            },
+            {
+              "start_utc": "2026-11-02T11:05:00Z",
+              "close": 2285.8,
+              "taker_buy_quote_usdt": 4656435.05,
+              "taker_sell_quote_usdt": 3533207.63,
+              "cvd_delta_quote_usdt": 1123227.42
+            },
+            {
+              "start_utc": "2026-11-02T11:10:00Z",
+              "close": 2287.82,
+              "taker_buy_quote_usdt": 10168882.9,
+              "taker_sell_quote_usdt": 6598053.45,
+              "cvd_delta_quote_usdt": 3570829.45
+            },
+            {
+              "start_utc": "2026-11-02T11:15:00Z",
+              "close": 2284.96,
+              "taker_buy_quote_usdt": 5999427.64,
+              "taker_sell_quote_usdt": 9936793.15,
+              "cvd_delta_quote_usdt": -3937365.51
+            },
+            {
+              "start_utc": "2026-11-02T11:20:00Z",
+              "close": 2284.99,
+              "taker_buy_quote_usdt": 5441787.16,
+              "taker_sell_quote_usdt": 3103744.13,
+              "cvd_delta_quote_usdt": 2338043.03
+            },
+            {
+              "start_utc": "2026-11-02T11:25:00Z",
+              "close": 2284.4,
+              "taker_buy_quote_usdt": 5547869.3,
+              "taker_sell_quote_usdt": 2516083.19,
+              "cvd_delta_quote_usdt": 3031786.11
+            },
+            {
+              "start_utc": "2026-11-02T11:30:00Z",
+              "close": 2283.93,
+              "taker_buy_quote_usdt": 3800584.76,
+              "taker_sell_quote_usdt": 5930889.99,
+              "cvd_delta_quote_usdt": -2130305.23
+            },
+            {
+              "start_utc": "2026-11-02T11:35:00Z",
+              "close": 2287.74,
+              "taker_buy_quote_usdt": 13209727.23,
+              "taker_sell_quote_usdt": 3967928.27,
+              "cvd_delta_quote_usdt": 9241798.95
+            },
+            {
+              "start_utc": "2026-11-02T11:40:00Z",
+              "close": 2284.61,
+              "taker_buy_quote_usdt": 5918174.42,
+              "taker_sell_quote_usdt": 10912583.92,
+              "cvd_delta_quote_usdt": -4994409.5
+            },
+            {
+              "start_utc": "2026-11-02T11:45:00Z",
+              "close": 2283.48,
+              "taker_buy_quote_usdt": 7046277.84,
+              "taker_sell_quote_usdt": 8213736.61,
+              "cvd_delta_quote_usdt": -1167458.77
+            },
+            {
+              "start_utc": "2026-11-02T11:50:00Z",
+              "close": 2285.6,
+              "taker_buy_quote_usdt": 4511153.86,
+              "taker_sell_quote_usdt": 2882805.18,
+              "cvd_delta_quote_usdt": 1628348.68
+            },
+            {
+              "start_utc": "2026-11-02T11:55:00Z",
+              "close": 2285.97,
+              "taker_buy_quote_usdt": 3750268.63,
+              "taker_sell_quote_usdt": 2101255.19,
+              "cvd_delta_quote_usdt": 1649013.44
+            },
+            {
+              "start_utc": "2026-11-02T12:00:00Z",
+              "close": 2285.67,
+              "taker_buy_quote_usdt": 6221660.78,
+              "taker_sell_quote_usdt": 2602888.74,
+              "cvd_delta_quote_usdt": 3618772.04
+            },
+            {
+              "start_utc": "2026-11-02T12:05:00Z",
+              "close": 2290.74,
+              "taker_buy_quote_usdt": 17558018.26,
+              "taker_sell_quote_usdt": 11618806.73,
+              "cvd_delta_quote_usdt": 5939211.53
+            },
+            {
+              "start_utc": "2026-11-02T12:10:00Z",
+              "close": 2293.13,
+              "taker_buy_quote_usdt": 13520852.4,
+              "taker_sell_quote_usdt": 7221982.44,
+              "cvd_delta_quote_usdt": 6298869.97
+            },
+            {
+              "start_utc": "2026-11-02T12:15:00Z",
+              "close": 2293.15,
+              "taker_buy_quote_usdt": 29586690.36,
+              "taker_sell_quote_usdt": 17802165.19,
+              "cvd_delta_quote_usdt": 11784525.16
+            },
+            {
+              "start_utc": "2026-11-02T12:20:00Z",
+              "close": 2292.58,
+              "taker_buy_quote_usdt": 5764527.73,
+              "taker_sell_quote_usdt": 6220185.56,
+              "cvd_delta_quote_usdt": -455657.83
+            },
+            {
+              "start_utc": "2026-11-02T12:25:00Z",
+              "close": 2291.89,
+              "taker_buy_quote_usdt": 5298555.15,
+              "taker_sell_quote_usdt": 5292150.12,
+              "cvd_delta_quote_usdt": 6405.03
+            },
+            {
+              "start_utc": "2026-11-02T12:30:00Z",
+              "close": 2288.03,
+              "taker_buy_quote_usdt": 8387185.23,
+              "taker_sell_quote_usdt": 12745549.67,
+              "cvd_delta_quote_usdt": -4358364.45
+            },
+            {
+              "start_utc": "2026-11-02T12:35:00Z",
+              "close": 2283.81,
+              "taker_buy_quote_usdt": 8669171.25,
+              "taker_sell_quote_usdt": 13396923.39,
+              "cvd_delta_quote_usdt": -4727752.13
+            },
+            {
+              "start_utc": "2026-11-02T12:40:00Z",
+              "close": 2286.72,
+              "taker_buy_quote_usdt": 35961096.85,
+              "taker_sell_quote_usdt": 32491658.66,
+              "cvd_delta_quote_usdt": 3469438.19
+            },
+            {
+              "start_utc": "2026-11-02T12:45:00Z",
+              "close": 2286.15,
+              "taker_buy_quote_usdt": 11790850.94,
+              "taker_sell_quote_usdt": 9164577.32,
+              "cvd_delta_quote_usdt": 2626273.62
+            },
+            {
+              "start_utc": "2026-11-02T12:50:00Z",
+              "close": 2284.12,
+              "taker_buy_quote_usdt": 9761224.93,
+              "taker_sell_quote_usdt": 15957961.24,
+              "cvd_delta_quote_usdt": -6196736.31
+            },
+            {
+              "start_utc": "2026-11-02T12:55:00Z",
+              "close": 2284.6,
+              "taker_buy_quote_usdt": 5729469.93,
+              "taker_sell_quote_usdt": 5313014.77,
+              "cvd_delta_quote_usdt": 416455.16
+            },
+            {
+              "start_utc": "2026-11-02T13:00:00Z",
+              "close": 2282.8,
+              "taker_buy_quote_usdt": 5445855.47,
+              "taker_sell_quote_usdt": 5886424.37,
+              "cvd_delta_quote_usdt": -440568.9
+            },
+            {
+              "start_utc": "2026-11-02T13:05:00Z",
+              "close": 2281.42,
+              "taker_buy_quote_usdt": 4988759.36,
+              "taker_sell_quote_usdt": 9496053.79,
+              "cvd_delta_quote_usdt": -4507294.43
+            },
+            {
+              "start_utc": "2026-11-02T13:10:00Z",
+              "close": 2282.59,
+              "taker_buy_quote_usdt": 4990007.81,
+              "taker_sell_quote_usdt": 6328600.0,
+              "cvd_delta_quote_usdt": -1338592.19
+            },
+            {
+              "start_utc": "2026-11-02T13:15:00Z",
+              "close": 2277.59,
+              "taker_buy_quote_usdt": 7125565.14,
+              "taker_sell_quote_usdt": 12731513.42,
+              "cvd_delta_quote_usdt": -5605948.28
+            },
+            {
+              "start_utc": "2026-11-02T13:20:00Z",
+              "close": 2279.05,
+              "taker_buy_quote_usdt": 12137707.37,
+              "taker_sell_quote_usdt": 8052858.41,
+              "cvd_delta_quote_usdt": 4084848.96
+            },
+            {
+              "start_utc": "2026-11-02T13:25:00Z",
+              "close": 2280.06,
+              "taker_buy_quote_usdt": 7989153.9,
+              "taker_sell_quote_usdt": 6913788.14,
+              "cvd_delta_quote_usdt": 1075365.77
+            },
+            {
+              "start_utc": "2026-11-02T13:30:00Z",
+              "close": 2277.08,
+              "taker_buy_quote_usdt": 15784460.83,
+              "taker_sell_quote_usdt": 21366742.99,
+              "cvd_delta_quote_usdt": -5582282.16
+            },
+            {
+              "start_utc": "2026-11-02T13:35:00Z",
+              "close": 2298.36,
+              "taker_buy_quote_usdt": 129235390.01,
+              "taker_sell_quote_usdt": 79522553.32,
+              "cvd_delta_quote_usdt": 49712836.69
+            }
+          ]
         },
         "depth": {
-          "status": "unavailable",
-          "reason": "/fapi/v1/depth: HTTPError HTTP 451; endpoint unavailable (not substituted)"
+          "observed_utc": "2026-11-02T13:44:18.998000Z",
+          "exchange_event_time_utc": "2026-11-02T13:44:26.047000Z",
+          "mid_usdt": 2297.745,
+          "best_bid": 2297.74,
+          "best_ask": 2297.75,
+          "spread_bps": 0.0435,
+          "levels_returned_bids": 1000,
+          "levels_returned_asks": 1000,
+          "depth_bands": {
+            "plus_minus_0.1pct": {
+              "bid_notional_usdt": 9843327.05,
+              "ask_notional_usdt": 11771253.61,
+              "coverage_complete_bid": true,
+              "coverage_complete_ask": true,
+              "bid_ask_ratio": 0.8362
+            },
+            "plus_minus_0.5pct": {
+              "bid_notional_usdt": null,
+              "ask_notional_usdt": null,
+              "coverage_complete_bid": false,
+              "coverage_complete_ask": false,
+              "bid_ask_ratio": null
+            },
+            "plus_minus_1pct": {
+              "bid_notional_usdt": null,
+              "ask_notional_usdt": null,
+              "coverage_complete_bid": false,
+              "coverage_complete_ask": false,
+              "bid_ask_ratio": null
+            }
+          }
         },
         "open_interest": {
-          "status": "unavailable",
-          "reason": "/fapi/v1/openInterest: HTTPError HTTP 451; endpoint unavailable (not substituted)"
+          "status": "ok",
+          "current_contract_units": 2352524.364,
+          "current_time_utc": "2026-11-02T13:44:23.885000Z",
+          "changes": {
+            "1h": {
+              "status": "ok",
+              "open_interest_contract_units_change": 1214.94,
+              "open_interest_contract_units_pct": 0.0516,
+              "notional_change_usdt": 133540.2,
+              "notional_change_pct": 0.0025
+            },
+            "4h": {
+              "status": "ok",
+              "open_interest_contract_units_change": -2869.728,
+              "open_interest_contract_units_pct": -0.1217,
+              "notional_change_usdt": -34841494.1,
+              "notional_change_pct": -0.6432
+            },
+            "24h": {
+              "status": "ok",
+              "open_interest_contract_units_change": -13280.118,
+              "open_interest_contract_units_pct": -0.5606,
+              "notional_change_usdt": 26676126.86,
+              "notional_change_pct": 0.4981
+            }
+          },
+          "latest_history_utc": "2026-11-02T13:00:00Z",
+          "latest_history_contract_units": 2355748.27,
+          "latest_history_notional_usdt": 5382196461.91
         },
         "funding": {
-          "status": "unavailable",
-          "reason": "/fapi/v1/premiumIndex: HTTPError HTTP 451; endpoint unavailable (not substituted)"
+          "last_funding_rate": 6.363e-05,
+          "next_funding_time_utc": "2026-11-02T16:00:00Z",
+          "mark_price": 2297.61370543,
+          "index_price": 2298.56511628,
+          "funding_basis_bps": -4.1392
         }
       },
       "quality": {
         "spot_flow": "ok",
         "spot_depth": "ok",
-        "futures_flow": "unavailable",
-        "futures_depth": "unavailable",
-        "futures_oi": "unavailable",
-        "futures_funding": "unavailable",
-        "bybit_linear_ticker": "unavailable",
-        "bybit_linear_open_interest_history": "unavailable",
-        "bybit_linear_depth": "unavailable"
+        "futures_flow": "ok",
+        "futures_depth": "ok",
+        "futures_oi": "ok",
+        "futures_funding": "ok",
+        "bybit_linear_ticker": "ok",
+        "bybit_linear_open_interest_history": "ok",
+        "bybit_linear_depth": "ok"
       },
       "limitations": [
         "Kline taker-buy vs remainder is a 5m aggregated trade-direction proxy; no trade-level reconstruction.",
@@ -956,25 +1897,84 @@
         "instrument": "ETHUSDT",
         "product": "USDT linear perpetual",
         "quality": {
-          "ticker": "unavailable",
-          "open_interest_history": "unavailable",
-          "depth": "unavailable"
+          "ticker": "ok",
+          "open_interest_history": "ok",
+          "depth": "ok"
         },
         "limitations": [
           "Not Binance futures. Never combine venue-specific OI or book depth.",
           "Recent public trades are a limited sample, not complete 1h/4h/24h derivatives CVD."
         ],
         "ticker": {
-          "status": "unavailable",
-          "reason": "/v5/market/tickers: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+          "observed_utc": "2026-11-02T13:44:18.998000Z",
+          "last_price_usdt": 2297.89,
+          "mark_price_usdt": 2297.88,
+          "index_price_usdt": 2298.54,
+          "open_interest_coin_units": 813718.46,
+          "open_interest_notional_usdt": 1869827374.86,
+          "funding_rate": 9.745e-05,
+          "next_funding_utc": "2026-11-02T16:00:00Z",
+          "basis_mark_vs_index_bps": -2.8714
         },
         "open_interest_history": {
-          "status": "unavailable",
-          "reason": "/v5/market/open-interest: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+          "last_history_utc": "2026-11-02T13:00:00Z",
+          "last_history_coin_units": 820035.32,
+          "changes": {
+            "1h": {
+              "status": "ok",
+              "coin_units_change": -264.4,
+              "coin_units_pct_change": -0.0322,
+              "start_utc": "2026-11-02T12:00:00Z",
+              "end_utc": "2026-11-02T13:00:00Z"
+            },
+            "4h": {
+              "status": "ok",
+              "coin_units_change": -3457.59,
+              "coin_units_pct_change": -0.4199,
+              "start_utc": "2026-11-02T09:00:00Z",
+              "end_utc": "2026-11-02T13:00:00Z"
+            },
+            "24h": {
+              "status": "ok",
+              "coin_units_change": -3572.67,
+              "coin_units_pct_change": -0.4338,
+              "start_utc": "2026-11-01T13:00:00Z",
+              "end_utc": "2026-11-02T13:00:00Z"
+            }
+          }
         },
         "depth": {
-          "status": "unavailable",
-          "reason": "/v5/market/orderbook: HTTPError HTTP 403; endpoint unavailable (not substituted)"
+          "observed_utc": "2026-11-02T13:44:18.998000Z",
+          "exchange_event_time_utc": "2026-11-02T13:44:27.847000Z",
+          "mid_usdt": 2297.895,
+          "best_bid": 2297.89,
+          "best_ask": 2297.9,
+          "spread_bps": 0.0435,
+          "levels_returned_bids": 1000,
+          "levels_returned_asks": 1000,
+          "depth_bands": {
+            "plus_minus_0.1pct": {
+              "bid_notional_usdt": 7931952.06,
+              "ask_notional_usdt": 7782763.83,
+              "coverage_complete_bid": true,
+              "coverage_complete_ask": true,
+              "bid_ask_ratio": 1.0192
+            },
+            "plus_minus_0.5pct": {
+              "bid_notional_usdt": 58771871.85,
+              "ask_notional_usdt": 62054103.65,
+              "coverage_complete_bid": true,
+              "coverage_complete_ask": true,
+              "bid_ask_ratio": 0.9471
+            },
+            "plus_minus_1pct": {
+              "bid_notional_usdt": null,
+              "ask_notional_usdt": null,
+              "coverage_complete_bid": false,
+              "coverage_complete_ask": false,
+              "bid_ask_ratio": null
+            }
+          }
         },
         "cvd_1h_4h_24h": {
           "status": "unavailable",
@@ -983,7 +1983,7 @@
       }
     }
   },
-  "quality_status": "partial_core",
+  "quality_status": "complete_binance_spot_and_futures",
   "limitations": [
     "No exact order-flow absorption conclusion can be drawn from intermittent depth snapshots.",
     "No public complete retrospective liquidation tape provided by this script; no invented liquidation totals.",
